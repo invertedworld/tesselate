@@ -538,12 +538,32 @@
     const order = [];
     for (const s of list) if (s.layer === 'fill' && !s.group) order.push(s);
 
-    const units = new Map();
+    /* Each shape sits in a unit — its group, or itself. A fill then pulls
+       the marks that bound it into its own unit, wherever else they
+       belong, because a fill must never be painted over its own border.
+       Within a unit the fill goes down first, so the whole figure sits at
+       one depth with its outline on top. */
+    const key = new Map();
     list.forEach((s, i) => {
       if (s.layer === 'fill' && !s.group) return;
-      const key = s.group ? `g${s.group}` : `i${i}`;
-      let u = units.get(key);
-      if (!u) units.set(key, (u = { last: i, fills: [], strokes: [] }));
+      key.set(s, s.group ? `g${s.group}` : `i${i}`);
+    });
+    const byId = new Map();
+    for (const s of list) if (s.id != null) byId.set(s.id, s);
+    for (const s of list) {
+      if (s.layer !== 'fill' || !s.walls || !key.has(s)) continue;
+      for (const wid of s.walls) {
+        const w = byId.get(wid);
+        if (w && key.has(w)) key.set(w, key.get(s));
+      }
+    }
+
+    const units = new Map();
+    list.forEach((s, i) => {
+      const k = key.get(s);
+      if (k === undefined) return;
+      let u = units.get(k);
+      if (!u) units.set(k, (u = { last: i, fills: [], strokes: [] }));
       if (i > u.last) u.last = i;
       (s.layer === 'fill' ? u.fills : u.strokes).push(s);
     });
@@ -763,9 +783,13 @@
 
   /* ---------------- drawing ---------------- */
 
+  // Marks are copied rather than mutated, so they carry an id that
+  // survives being moved or recoloured.
+  let shapeSeq = 1;
+
   function newStroke(extra) {
     return Object.assign({
-      layer: 'stroke', color: state.color, width: state.width,
+      id: shapeSeq++, layer: 'stroke', color: state.color, width: state.width,
     }, extra);
   }
 
@@ -1225,6 +1249,7 @@
       return flash('Filled — border and interior are one mark');
     }
 
+    region.id = shapeSeq++;
     region.layer = 'fill';
     region.color = state.color;
 
@@ -1246,6 +1271,9 @@
       if (id >= 1 && id <= state.shapes.length) bounding.add(id - 1);
     }
     const walls = [...bounding].map((i) => state.shapes[i]).filter(Boolean);
+    // Remember what the area came up against, so it can never be painted
+    // over the top of it.
+    region.walls = walls.map((sh) => sh.id).filter((v) => v != null);
 
     // An area that reaches all four edges is the ground the marks sit
     // on, not the inside of any of them; grouping it would tie the whole
@@ -1874,7 +1902,11 @@
     try { d = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (err) { d = null; }
     if (!d) return;
     if (Array.isArray(d.shapes)) state.shapes = d.shapes.filter((s) => s && s.kind);
-    for (const sh of state.shapes) if (sh.group >= groupSeq) groupSeq = sh.group + 1;
+    for (const sh of state.shapes) {
+      if (sh.group >= groupSeq) groupSeq = sh.group + 1;
+      if (sh.id == null) sh.id = shapeSeq++;
+      else if (sh.id >= shapeSeq) shapeSeq = sh.id + 1;
+    }
     if (d.pattern && d.pattern.n >= 1 && d.pattern.n <= 4 && Array.isArray(d.pattern.cells)
         && d.pattern.cells.length === d.pattern.n * d.pattern.n) state.pattern = d.pattern;
     if (PALETTE.includes(d.color)) state.color = d.color;
