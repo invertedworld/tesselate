@@ -25,7 +25,7 @@ mark — it stays live and follows the cursor until the second click, and
 |---|---|
 | **Select** `Space` | Click a mark to pick it up, drag to move it. Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
 | **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Held drag only, and it ignores the grid entirely |
-| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. Hold `Shift` to snap to 15° |
+| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. Hold `Shift` to hold it horizontal, vertical or to 45°; with a lattice up the length is quantised along that direction too |
 | **Arc** `A` | Two clicks for the ends, then move to bend it and click to set. The bend may sit outside the tile and the click that sets it can land anywhere |
 | **Circle** `C` | Click the centre, then click to set the radius; `Shift` quantises it |
 | **Rect** `R` | Click a corner, then the opposite one; `Shift` for a square |
@@ -126,7 +126,9 @@ Freehand is deliberately exempt: the pencil never touches the lattice.
 Snapping the ends to the tile edge is what makes a motif meet its own
 reflection cleanly across the seam, and it closes shapes reliably enough for
 the fill tool to find them. Hold `Alt` to ignore the lattice for one mark.
-Where both could apply, the lattice takes precedence over `Shift`'s angle snap.
+`Shift` takes precedence over snapping: asking for a direction is the more
+specific request, and the length is then quantised along it so the far end
+still lands on the lattice.
 
 The two switches are independent: setting *Grid* to `Off` leaves snapping on
 and working — it just falls back to the marks themselves.

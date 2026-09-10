@@ -96,7 +96,7 @@
     base: 'Draw in any square · two-finger scroll to pan · pinch to zoom',
     select: 'Select — click a mark to pick it up, drag to move it',
     pencil: 'Pencil — draw freely inside the frame',
-    line: 'Line — click each point in turn; Esc finishes · Shift snaps to 15°',
+    line: 'Line — click each point in turn; Esc finishes · Shift holds it square or to 45°',
     curve: 'Arc — click the two ends, then click to set the bend',
     circle: 'Circle — click the centre, then click to set the radius',
     rect: 'Rectangle — click a corner, then the opposite one · Shift squares it',
@@ -806,10 +806,26 @@
     return true;
   }
 
-  // The lattice wins over Shift's angle snap when both are asked for.
+  /* Shift holds a mark to the eight directions — horizontal, vertical
+     and the two diagonals — and takes precedence over snapping, since
+     asking for a direction is the more specific request. With a lattice
+     up, the length is then quantised along that direction so the far end
+     still lands on it: a whole cell along the axes, a cell's diagonal
+     across them. */
   function endPoint(a, w) {
+    if (shiftHeld) {
+      const p = snapAngle(a, w, Math.PI / 4);
+      if (!snapping() || !state.sub) return p;
+      const dx = p.x - a.x, dy = p.y - a.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-9) return p;
+      const diagonal = Math.abs(dx) > 1e-9 && Math.abs(dy) > 1e-9;
+      const unit = (T / effSub()) * (diagonal ? Math.SQRT2 : 1);
+      const q = Math.round(len / unit) * unit;
+      return { x: a.x + (dx / len) * q, y: a.y + (dy / len) * q };
+    }
     if (snapping()) return snapAt(w) || w;
-    return shiftHeld ? snapAngle(a, w, Math.PI / 12) : w;
+    return w;
   }
 
   /* The plane repeats every tile, so a mark dragged into a neighbour is
