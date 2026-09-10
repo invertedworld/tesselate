@@ -310,18 +310,61 @@
     return n;
   }
 
-  const snapping = () => state.snap && state.sub > 0 && !altHeld;
+  const snapping = () => state.snap && !altHeld;
   const latticeAt = (p) => (diagGrid() ? snapDiag(p, effSub()) : snapPoint(p, effSub()));
-  const sp = (w) => (snapping() ? latticeAt(w) : w);
+
+  /* Marks already on the tile are snap targets in their own right: the
+     ends and middles of lines and arcs, the centres and rims of circles,
+     the corners of rectangles. They take precedence over the lattice
+     when one is within reach of the cursor, and they work whether or not
+     a lattice is showing. */
+  function objectSnap(p) {
+    const tol = 12 / state.view.scale;
+    let best = null, bestD = tol;
+    const consider = (q) => {
+      const d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d < bestD) { bestD = d; best = q; }
+    };
+    for (const sh of state.shapes) {
+      if (sh.layer !== 'stroke') continue;
+      for (const q of snapPointsOf(sh)) consider(q);
+      if (sh.kind === 'circle') {
+        // the nearest point on the rim, wherever the cursor happens to be
+        const dx = p.x - sh.c.x, dy = p.y - sh.c.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 1e-6) {
+          consider({ x: sh.c.x + (dx / len) * sh.r, y: sh.c.y + (dy / len) * sh.r, kind: 'edge' });
+        }
+      }
+    }
+    return best;
+  }
+
+  function snapAt(p) {
+    const hit = objectSnap(p);
+    if (hit) return hit;
+    if (!state.sub) return null;
+    const g = latticeAt(p);
+    g.kind = 'grid';
+    return g;
+  }
+
+  const sp = (w) => (snapping() ? snapAt(w) || w : w);
 
   const SNAP_TOOLS = { line: 1, curve: 1, circle: 1, rect: 1 };
 
   function noteHover(w) {
     const show = snapping() && SNAP_TOOLS[state.tool]
       && (draft || pending || insideTile(w, 5));
-    const next = show ? fromTileSpace(latticeAt(w)) : null;
+    const t = show ? snapAt(w) : null;
+    let next = null;
+    if (t) {
+      const q = fromTileSpace(t);
+      next = { x: q.x, y: q.y, kind: t.kind };
+    }
     const same = (!next && !hoverSnap)
-      || (next && hoverSnap && next.x === hoverSnap.x && next.y === hoverSnap.y);
+      || (next && hoverSnap && next.x === hoverSnap.x
+          && next.y === hoverSnap.y && next.kind === hoverSnap.kind);
     hoverSnap = next;
     if (!same) requestDraw();
   }
@@ -637,16 +680,19 @@
   }
 
   // Where the next point will actually land.
+  // What the next point will land on: a red cross, whatever kind of
+  // target caught it.
   function drawSnapMark() {
     const p = w2s(hoverSnap.x, hoverSnap.y);
     const x = Math.round(p.x) + 0.5, y = Math.round(p.y) + 0.5;
-    const a = 4.5;
-    ctx.lineWidth = 1;
+    const a = 5;
+    ctx.lineWidth = 1.4;
     ctx.strokeStyle = ACCENT;
     ctx.beginPath();
-    ctx.moveTo(x - a, y); ctx.lineTo(x + a, y);
-    ctx.moveTo(x, y - a); ctx.lineTo(x, y + a);
+    ctx.moveTo(x - a, y - a); ctx.lineTo(x + a, y + a);
+    ctx.moveTo(x + a, y - a); ctx.lineTo(x - a, y + a);
     ctx.stroke();
+    ctx.lineWidth = 1;
   }
 
   // Printer's crop marks around the drawing surface.
@@ -762,7 +808,7 @@
 
   // The lattice wins over Shift's angle snap when both are asked for.
   function endPoint(a, w) {
-    if (snapping()) return latticeAt(w);
+    if (snapping()) return snapAt(w) || w;
     return shiftHeld ? snapAngle(a, w, Math.PI / 12) : w;
   }
 
@@ -808,12 +854,11 @@
       let dx = w.x - moving.from.x;
       let dy = w.y - moving.from.y;
       if (snapping()) {
-        // Land the mark's own anchor on the lattice, so dragging both
+        // Land the mark's own anchor on a target, so dragging both
         // keeps a snapped mark snapped and pulls a stray one into line.
         const a = anchorOf(moving.base);
-        const t = latticeAt({ x: a.x + dx, y: a.y + dy });
-        dx = t.x - a.x;
-        dy = t.y - a.y;
+        const t = snapAt({ x: a.x + dx, y: a.y + dy });
+        if (t) { dx = t.x - a.x; dy = t.y - a.y; }
       }
       moving.dx = dx;
       moving.dy = dy;
@@ -840,7 +885,7 @@
         break;
       case 'poly': {
         // The same corner-to-corner drag, done on the turned frame.
-        let a = toDiag(anchor), b = toDiag(snapping() ? latticeAt(w) : w);
+        let a = toDiag(anchor), b = toDiag(snapping() ? snapAt(w) || w : w);
         if (shiftHeld) {
           const dx = b.x - a.x, dy = b.y - a.y;
           const m = Math.max(Math.abs(dx), Math.abs(dy));
@@ -853,7 +898,7 @@
         break;
       }
       case 'rect': {
-        let q = snapping() ? latticeAt(w) : w;
+        let q = snapping() ? snapAt(w) || w : w;
         if (shiftHeld) {
           // Square off the longer side. On the lattice both sides are
           // whole steps, so this stays on it.
@@ -869,10 +914,14 @@
       }
       case 'circle': {
         let r = dist(draft.c, w);
-        if (snapping()) {
+        const hit = snapping() ? objectSnap(w) : null;
+        if (hit) {
+          // let the rim pass exactly through whatever it reached
+          r = dist(draft.c, hit);
+        } else if (snapping() && state.sub) {
           // Half a cell at a time, so a circle can sit on the lattice
           // or halfway between it.
-          const half = T / state.sub / 2;
+          const half = T / effSub() / 2;
           r = Math.round(r / half) * half;
         } else if (shiftHeld) {
           r = Math.round(r / 25) * 25;
@@ -1488,8 +1537,10 @@
     if (name === 'snap') {
       // Asking for snapping with no lattice to snap to isn't useful;
       // give it a reasonable one.
-      if (state.snap && !state.sub) setSub(8);
-      else flash(state.snap ? `Snapping to a ${state.sub} × ${state.sub} grid · hold Alt to ignore` : 'Snapping off');
+      flash(state.snap
+        ? (state.sub ? `Snapping to marks and a ${state.sub} × ${state.sub} grid · hold Alt to ignore`
+                     : 'Snapping to marks · hold Alt to ignore')
+        : 'Snapping off');
       hoverSnap = null;
     }
     requestDraw();
@@ -1544,7 +1595,7 @@
     syncToggles();
     if (state.snap) {
       flash(n ? `Snapping to a ${n} × ${n} grid · hold Alt to ignore`
-              : 'Grid off — nothing to snap to until you pick one');
+              : 'Grid off — snapping to marks only');
     }
     requestDraw();
     saveSoon();
@@ -1554,8 +1605,6 @@
     for (const b of document.querySelectorAll('[data-toggle]')) {
       b.classList.toggle('on', !!state[b.dataset.toggle]);
     }
-    const snapBtn = document.querySelector('[data-toggle="snap"]');
-    if (snapBtn) snapBtn.classList.toggle('muted', !state.sub);
   }
 
   document.querySelector('.rail').addEventListener('pointerdown', () => {
@@ -1585,8 +1634,8 @@
 
   /* symmetry ------------------------------------------------------ */
 
-  // A letter is the clearest possible read on which way a tile faces.
-  const CELL_GLYPH = '<text x="12" y="18.2" text-anchor="middle">A</text>';
+  // An arrow is the clearest possible read on which way a tile faces.
+  const CELL_GLYPH = '<text x="12" y="12" text-anchor="middle" dominant-baseline="central">\u2B06\uFE0F</text>';
 
   const presetWrap = document.getElementById('presets');
   PRESETS.forEach((p) => {

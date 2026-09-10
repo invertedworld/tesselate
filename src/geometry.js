@@ -432,3 +432,43 @@ function endpointsOf(s) {
   if (s.kind === 'path' && s.pts.length) return [s.pts[0], s.pts[s.pts.length - 1]];
   return [];
 }
+
+/* Points on an existing mark that are worth snapping to. The pencil is
+   left out on purpose: freehand has nothing to do with the grid or with
+   these. A circle's rim is handled by the caller, since the nearest
+   point on it depends on where the cursor is. */
+function snapPointsOf(s) {
+  const at = (p, kind) => ({ x: p.x, y: p.y, kind });
+  switch (s.kind) {
+    case 'line':
+      return [at(s.a, 'end'), at(s.b, 'end'),
+        { x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2, kind: 'mid' }];
+    case 'curve':
+      // the point halfway along the arc, not halfway along its chord
+      return [at(s.a, 'end'), at(s.b, 'end'), {
+        x: (s.a.x + 2 * s.c.x + s.b.x) / 4,
+        y: (s.a.y + 2 * s.c.y + s.b.y) / 4,
+        kind: 'mid',
+      }];
+    case 'circle':
+      return [
+        at(s.c, 'centre'),
+        { x: s.c.x - s.r, y: s.c.y, kind: 'edge' },
+        { x: s.c.x + s.r, y: s.c.y, kind: 'edge' },
+        { x: s.c.x, y: s.c.y - s.r, kind: 'edge' },
+        { x: s.c.x, y: s.c.y + s.r, kind: 'edge' },
+      ];
+    case 'rect':
+      return [
+        { x: s.x, y: s.y, kind: 'corner' },
+        { x: s.x + s.w, y: s.y, kind: 'corner' },
+        { x: s.x + s.w, y: s.y + s.h, kind: 'corner' },
+        { x: s.x, y: s.y + s.h, kind: 'corner' },
+        { x: s.x + s.w / 2, y: s.y + s.h / 2, kind: 'centre' },
+      ];
+    case 'poly':
+      return s.pts.map((p) => at(p, 'corner'));
+    default:
+      return [];
+  }
+}

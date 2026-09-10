@@ -108,8 +108,12 @@ Three ways to sit the work on the diagonal:
   mark together, so a tile-aligned square reads as a diamond on screen. Drawing
   works unchanged; the pointer is mapped back through the angle.
 
-*Snap to grid* (`S`) pulls new geometry onto that lattice, with a cross marking
-where the next point will land:
+*Snap to grid* (`S`) pulls new geometry onto the lattice **and onto the marks
+already on the tile** — the ends and middles of lines and arcs, the centres and
+rims of circles, the corners of rectangles. A mark within reach of the cursor
+wins over the lattice, and snapping keeps working with the grid switched off.
+
+A red cross marks the point that has been caught. What it pulls:
 
 - line and curve endpoints, and the point an arc is bent through
 - both corners of a rectangle
@@ -124,15 +128,14 @@ reflection cleanly across the seam, and it closes shapes reliably enough for
 the fill tool to find them. Hold `Alt` to ignore the lattice for one mark.
 Where both could apply, the lattice takes precedence over `Shift`'s angle snap.
 
-The two switches are independent: setting *Grid* to `Off` leaves the
-snap switch exactly as you set it and simply shows it dimmed, because there
-is nothing to snap to until you pick a lattice again.
+The two switches are independent: setting *Grid* to `Off` leaves snapping on
+and working — it just falls back to the marks themselves.
 
 ## Symmetry
 
 Rotation is defined by an *n × n* block of quarter-turns tiled across the plane.
 Pick a preset, choose a block size of 1–4, then click any cell to turn it a
-quarter at a time. The marked cell is your drawing surface and stays upright, so
+quarter at a time. The cell with the upright arrow is your drawing surface and stays upright, so
 presets are stored relative to it.
 
 - **Translate** — no rotation, plain repetition
