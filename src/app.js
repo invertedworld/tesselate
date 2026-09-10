@@ -318,12 +318,22 @@
      the corners of rectangles. They take precedence over the lattice
      when one is within reach of the cursor, and they work whether or not
      a lattice is showing. */
+  /* Targets are ranked, not just measured. Where several marks meet,
+     their midpoints and rims crowd around the junction and would win on
+     distance alone, so a point one of them ends at beats a point one of
+     them merely passes through. */
+  const SNAP_RANK = { end: 0, corner: 0, centre: 1, mid: 2, edge: 3 };
+
   function objectSnap(p) {
     const tol = 12 / state.view.scale;
-    let best = null, bestD = tol;
+    let best = null, bestRank = Infinity, bestD = Infinity;
     const consider = (q) => {
       const d = Math.hypot(q.x - p.x, q.y - p.y);
-      if (d < bestD) { bestD = d; best = q; }
+      if (d > tol) return;
+      const rank = SNAP_RANK[q.kind];
+      if (rank < bestRank || (rank === bestRank && d < bestD)) {
+        best = q; bestRank = rank; bestD = d;
+      }
     };
     for (const sh of state.shapes) {
       if (sh.layer !== 'stroke') continue;

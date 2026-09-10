@@ -113,7 +113,10 @@ already on the tile** — the ends and middles of lines and arcs, the centres an
 rims of circles, the corners of rectangles. A mark within reach of the cursor
 wins over the lattice, and snapping keeps working with the grid switched off.
 
-A red cross marks the point that has been caught. What it pulls:
+A red cross marks the point that has been caught. Targets are ranked rather
+than just measured: where several marks meet, their midpoints and rims crowd
+the junction and would win on distance alone, so a point a mark *ends* at beats
+one it merely passes through. What it pulls:
 
 - line and curve endpoints, and the point an arc is bent through
 - both corners of a rectangle
