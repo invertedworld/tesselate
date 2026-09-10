@@ -24,7 +24,8 @@
   const ACCENT = '#cf4326';
 
   const MAX_TILES = 1500;   // caps how far you can zoom out
-  const FILL_RES = 700;     // scratch resolution for area detection
+  const FILL_RES = 700;    // scratch resolution for area detection
+  const FILL_GROW = 2;      // ~3 tile units, enough to tuck under a stroke
   const WRAP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   const ORIGIN = [[0, 0]];
 
@@ -89,7 +90,7 @@
     rect: 'Move, then click to set the far corner · Esc to drop',
     poly: 'Move, then click to set the far corner · Esc to drop',
   };
-  const BEND_HINT = 'Move to bend the arc, click to set it · Esc to drop';
+  const BEND_HINT = 'Move to bend the arc, click to set it · Shift keeps it symmetrical';
   const CHAIN_HINT = 'Click to set the next point · Esc to finish the chain';
 
   const HINTS = {
@@ -1040,7 +1041,11 @@
   }
 
   function bendPending(w) {
-    draft.c = quadThrough(draft.a, draft.b, sp(w));
+    // Shift holds the apex square above the middle of the chord, which
+    // is what makes the arc symmetrical. Like the line's direction
+    // constraint, it takes precedence over snapping.
+    const m = shiftHeld ? bisectorFoot(draft.a, draft.b, w) : sp(w);
+    draft.c = quadThrough(draft.a, draft.b, m);
     requestDraw();
   }
 
@@ -1198,13 +1203,17 @@
 
     const px = fctx.getImageData(0, 0, R, R).data;
     const barrier = new Uint8Array(R * R);
-    for (let i = 0, n = R * R; i < n; i++) barrier[i] = px[i * 4 + 3] > 40 ? 1 : 0;
+    // Half covered counts as wall. A fainter threshold let the soft
+    // edges of two converging strokes seal the gap between them long
+    // before they actually met, so a narrow wedge stopped filling well
+    // short of its point.
+    for (let i = 0, n = R * R; i < n; i++) barrier[i] = px[i * 4 + 3] >= 128 ? 1 : 0;
 
     const seed = {
       x: clamp(Math.round(w.x * k), 0, R - 1),
       y: clamp(Math.round(w.y * k), 0, R - 1),
     };
-    const traced = traceRegion(barrier, R, R, seed, { grow: 2, eps: 1.2, wrap: state.wrap });
+    const traced = traceRegion(barrier, R, R, seed, { grow: FILL_GROW, eps: 2, wrap: state.wrap });
     if (!traced) return flash('No open area under the cursor');
     const region = traced.shape;
     const host = interiorHost(w, region);
@@ -1225,7 +1234,7 @@
     // Reach a little further than the fill polygon does: only a stroke's
     // fully opaque core carries a trustworthy index, and on a thin line
     // that core is a pixel or two in from its edge.
-    const reach = dilate(traced.mask, R, R, 4, state.wrap);
+    const reach = dilate(traced.mask, R, R, FILL_GROW * 2, state.wrap);
     const bounding = new Set();
     for (let i = 0, n = R * R; i < n; i++) {
       // Only fully opaque pixels carry a trustworthy index: the canvas

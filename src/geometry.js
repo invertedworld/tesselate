@@ -163,46 +163,77 @@ function floodMask(barrier, W, H, sx, sy, wrap) {
   const mask = new Uint8Array(W * H);
   const stack = [sy * W + sx];
   mask[sy * W + sx] = 1;
-  const visit = (x, y) => {
-    if (wrap) {
-      x = x < 0 ? x + W : x >= W ? x - W : x;
-      y = y < 0 ? y + H : y >= H ? y - H : y;
-    } else if (x < 0 || y < 0 || x >= W || y >= H) {
-      return;
-    }
-    const i = y * W + x;
-    if (!mask[i] && !barrier[i]) { mask[i] = 1; stack.push(i); }
-  };
   while (stack.length) {
     const i = stack.pop();
     const x = i % W, y = (i - x) / W;
-    visit(x - 1, y); visit(x + 1, y); visit(x, y - 1); visit(x, y + 1);
+    for (let k = 0; k < 4; k++) {
+      let nx = x + (k === 0 ? -1 : k === 1 ? 1 : 0);
+      let ny = y + (k === 2 ? -1 : k === 3 ? 1 : 0);
+      if (wrap) {
+        if (nx < 0) nx += W; else if (nx >= W) nx -= W;
+        if (ny < 0) ny += H; else if (ny >= H) ny -= H;
+      } else if (nx < 0 || ny < 0 || nx >= W || ny >= H) {
+        continue;
+      }
+      const j = ny * W + nx;
+      if (!mask[j] && !barrier[j]) { mask[j] = 1; stack.push(j); }
+    }
   }
   return mask;
 }
 
-function dilate(mask, W, H, passes, wrap) {
-  let cur = mask;
-  for (let p = 0; p < passes; p++) {
-    const next = cur.slice();
-    const set = (x, y) => {
-      if (wrap) {
-        x = x < 0 ? x + W : x >= W ? x - W : x;
-        y = y < 0 ? y + H : y >= H ? y - H : y;
-      } else if (x < 0 || y < 0 || x >= W || y >= H) {
-        return;
-      }
-      next[y * W + x] = 1;
-    };
-    for (let y = 0; y < H; y++) {
+/* Grow a mask by `r` cells. Done as two linear sweeps per axis — each
+   row and column asks only how far the nearest set cell is — so the cost
+   does not climb with the radius, which matters when the scratch grid is
+   a couple of million cells. The result is a square growth rather than a
+   diamond one; for tucking a fill under a stroke that is if anything the
+   more useful shape. */
+function dilate(mask, W, H, r, wrap) {
+  if (r <= 0) return mask;
+  const big = 1 << 28;
+  const laps = wrap ? 2 : 1;   // a second lap carries the ends round
+  const mid = new Uint8Array(W * H);
+  const out = new Uint8Array(W * H);
+  const dist = new Int32Array(Math.max(W, H));
+  let d;
+
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    d = big;
+    for (let lap = 0; lap < laps; lap++) {
       for (let x = 0; x < W; x++) {
-        if (!cur[y * W + x]) continue;
-        set(x - 1, y); set(x + 1, y); set(x, y - 1); set(x, y + 1);
+        d = mask[row + x] ? 0 : d + 1;
+        if (lap === 0 || d < dist[x]) dist[x] = d;
       }
     }
-    cur = next;
+    d = big;
+    for (let lap = 0; lap < laps; lap++) {
+      for (let x = W - 1; x >= 0; x--) {
+        d = mask[row + x] ? 0 : d + 1;
+        if (d < dist[x]) dist[x] = d;
+      }
+    }
+    for (let x = 0; x < W; x++) if (dist[x] <= r) mid[row + x] = 1;
   }
-  return cur;
+
+  for (let x = 0; x < W; x++) {
+    d = big;
+    for (let lap = 0; lap < laps; lap++) {
+      for (let y = 0; y < H; y++) {
+        d = mid[y * W + x] ? 0 : d + 1;
+        if (lap === 0 || d < dist[y]) dist[y] = d;
+      }
+    }
+    d = big;
+    for (let lap = 0; lap < laps; lap++) {
+      for (let y = H - 1; y >= 0; y--) {
+        d = mid[y * W + x] ? 0 : d + 1;
+        if (d < dist[y]) dist[y] = d;
+      }
+    }
+    for (let y = 0; y < H; y++) if (dist[y] <= r) out[y * W + x] = 1;
+  }
+  return out;
 }
 
 // Walk mask boundaries into closed loops of grid-aligned points.
@@ -471,4 +502,17 @@ function snapPointsOf(s) {
     default:
       return [];
   }
+}
+
+/* Put `m` on the perpendicular bisector of a-b, keeping how far out it
+   is. An arc bent through a point on that line is symmetrical: its apex
+   sits square above the middle of its chord. */
+function bisectorFoot(a, b, m) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) return m;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const nx = -dy / len, ny = dx / len;
+  const t = (m.x - mid.x) * nx + (m.y - mid.y) * ny;
+  return { x: mid.x + nx * t, y: mid.y + ny * t };
 }
