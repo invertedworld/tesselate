@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Tessera — a plane-symmetry drawing table</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="grain" aria-hidden="true"></div>
+
+<aside class="rail">
+
+  <header class="brand">
+    <h1>Tessera</h1>
+    <p>a plane&#8209;symmetry drawing table</p>
+  </header>
+
+  <section class="panel">
+    <div class="label"><span>Instrument</span><i></i></div>
+    <div class="tools" id="tools">
+      <button class="tool" data-tool="select" title="Select — Space (click a mark, drag to move)">
+        <svg viewBox="0 0 24 24"><path d="M6 3.2v15.1l4.1-3.8 2.7 5.9 2.6-1.2-2.7-5.9 5.7-.6z"/></svg>
+        <em>Select</em>
+      </button>
+      <button class="tool" data-tool="pencil" title="Pencil — P (freehand, held drag)">
+        <svg viewBox="0 0 24 24"><path d="M4.2 19.8l3.9-1.1L20.6 6.4a2.1 2.1 0 0 0-3-3L5.3 15.9z"/><path d="M15.6 5.4l3 3"/></svg>
+        <em>Pencil</em>
+      </button>
+      <button class="tool" data-tool="line" title="Line — L (click each end; Shift snaps to 15°)">
+        <svg viewBox="0 0 24 24"><path d="M5.8 18.2L18.2 5.8"/><circle cx="4.6" cy="19.4" r="1.7"/><circle cx="19.4" cy="4.6" r="1.7"/></svg>
+        <em>Line</em>
+      </button>
+      <button class="tool" data-tool="curve" title="Arc — A (click each end, then bend and click)">
+        <svg viewBox="0 0 24 24"><path d="M4.6 19.4C4.6 10 10 4.6 19.4 4.6"/><circle cx="4.6" cy="19.4" r="1.7"/><circle cx="19.4" cy="4.6" r="1.7"/><path d="M4.6 4.6h.01" stroke-width="2.6"/></svg>
+        <em>Arc</em>
+      </button>
+      <button class="tool" data-tool="circle" title="Circle — C (click the centre, then the radius)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><path d="M12 12h.01" stroke-width="2.4"/></svg>
+        <em>Circle</em>
+      </button>
+      <button class="tool" data-tool="rect" title="Rectangle — R (click each corner; Shift squares it)">
+        <svg viewBox="0 0 24 24"><rect x="4.6" y="6.6" width="14.8" height="10.8"/><path d="M4.6 6.6h.01" stroke-width="2.4"/></svg>
+        <em>Rect</em>
+      </button>
+      <button class="tool" data-tool="fill" title="Fill — F (click an area, or a mark to recolour it)">
+        <svg viewBox="0 0 24 24"><path d="M12 3.8L20.2 12 12 20.2 3.8 12z"/><path d="M12 20.2L3.8 12h16.4z" fill="currentColor" stroke="none"/></svg>
+        <em>Fill</em>
+      </button>
+      <button class="tool" data-tool="erase" title="Erase — E (click or drag across a mark)">
+        <svg viewBox="0 0 24 24"><path d="M9.2 19.6l-4.8-4.8 8.4-8.4 4.8 4.8z"/><path d="M9.2 19.6h10.4"/></svg>
+        <em>Erase</em>
+      </button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="label"><span>Ink</span><i></i></div>
+    <div class="swatches" id="swatches"></div>
+    <div class="row weight">
+      <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke weight">
+      <span class="mono num" id="widthVal">9</span>
+    </div>
+    <button class="wide toggle" data-toggle="filled" id="filledBtn">
+      <span class="tick"></span><span>Solid shapes</span>
+    </button>
+  </section>
+
+  <section class="panel">
+    <div class="label"><span>Symmetry</span><i></i></div>
+    <div class="chips" id="presets"></div>
+    <div class="row block-row">
+      <span class="mono tiny">Block</span>
+      <div class="sizes" id="sizes"></div>
+    </div>
+    <div class="pattern-grid" id="patternGrid"></div>
+    <p class="note">Click a tile to turn it a quarter. The upright A is your drawing surface.</p>
+  </section>
+
+  <section class="panel">
+    <div class="label"><span>Plane</span><i></i></div>
+    <div class="grid2 toggles2">
+      <button class="wide toggle" data-toggle="grid"><span class="tick"></span><span>Tile rules</span></button>
+      <button class="wide toggle" data-toggle="clip"><span class="tick"></span><span>Clip tile</span></button>
+      <button class="wide toggle" data-toggle="wrap"><span class="tick"></span><span>Wrap edges</span></button>
+      <button class="wide toggle" data-toggle="snap" title="Snap to the alignment grid — S (hold Alt to ignore)"><span class="tick"></span><span>Snap to grid</span></button>
+    </div>
+    <div class="sub-row">
+      <span class="mono tiny">Grid</span>
+      <div class="subs" id="subs"></div>
+    </div>
+    <div class="sub-row">
+      <span class="mono tiny">Turn 45°</span>
+      <div class="modes" id="diagModes"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="label"><span>Table</span><i></i></div>
+    <div class="grid2">
+      <button class="wide" id="undo" title="Undo — ⌘Z">Undo</button>
+      <button class="wide" id="redo" title="Redo — ⇧⌘Z">Redo</button>
+      <button class="wide" id="resetView" title="Recentre the view — H">Recentre</button>
+      <button class="wide danger" id="clear" title="Clear the tile">Clear</button>
+      <button class="wide" id="exportSvg">Save SVG</button>
+      <button class="wide" id="exportPng">Save PNG</button>
+    </div>
+  </section>
+
+  <footer class="rail-foot mono tiny">
+    <span id="shapeCount">0 shapes</span>
+    <span id="zoomVal">100%</span>
+  </footer>
+</aside>
+
+<main class="stage-wrap">
+  <canvas id="stage"></canvas>
+  <div class="hud">
+    <div class="hud-line mono" id="hint">Draw inside the frame · drag outside to pan · pinch to zoom</div>
+  </div>
+</main>
+
+<script src="src/geometry.js"></script>
+<script src="src/patterns.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
