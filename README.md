@@ -25,7 +25,7 @@ mark — it stays live and follows the cursor until the second click, and
 |---|---|
 | **Select** `Space` | Click a mark to pick it up, drag to move it. Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
 | **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Held drag only, and it ignores the grid entirely |
-| **Line** `L` | Two clicks; hold `Shift` to snap to 15° |
+| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. Hold `Shift` to snap to 15° |
 | **Arc** `A` | Two clicks for the ends, then move to bend it and click to set. The bend may sit outside the tile and the click that sets it can land anywhere |
 | **Circle** `C` | Click the centre, then click to set the radius; `Shift` quantises it |
 | **Rect** `R` | Click a corner, then the opposite one; `Shift` for a square |

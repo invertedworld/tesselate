@@ -90,12 +90,13 @@
     poly: 'Move, then click to set the far corner · Esc to drop',
   };
   const BEND_HINT = 'Move to bend the arc, click to set it · Esc to drop';
+  const CHAIN_HINT = 'Click to set the next point · Esc to finish the chain';
 
   const HINTS = {
     base: 'Draw in any square · two-finger scroll to pan · pinch to zoom',
     select: 'Select — click a mark to pick it up, drag to move it',
     pencil: 'Pencil — draw freely inside the frame',
-    line: 'Line — click the start, then click the end · Shift snaps to 15°',
+    line: 'Line — click each point in turn; Esc finishes · Shift snaps to 15°',
     curve: 'Arc — click the two ends, then click to set the bend',
     circle: 'Circle — click the centre, then click to set the radius',
     rect: 'Rectangle — click a corner, then the opposite one · Shift squares it',
@@ -910,6 +911,15 @@
     if (!d) return;
     if (tooSmall(d)) { requestDraw(); return; }
     commit(d);
+
+    // The line tool carries on from where it stopped, so a run of clicks
+    // draws a chain. Clicking the same point twice ends it, as does Esc.
+    if (state.tool === 'line' && d.kind === 'line') {
+      draft = newStroke({ kind: 'line', a: d.b, b: d.b });
+      pending = 'point';
+      setHint(CHAIN_HINT, true);
+      requestDraw();
+    }
   }
 
   // A click on a live mark either sets it, or — for a curve — moves it
