@@ -213,9 +213,9 @@ fifteen colours each — and you can keep as many of your own as you like.
 
 Under the swatches is the mixer: a **hex field** that takes any of `#rrggbb`,
 `#rgb`, `#rrggbbaa` or `#rgba`, with or without the `#`; a half-filled circle
-that opens the system colour picker; and **Pick** `I`, an eyedropper — arm it
-and the next click anywhere on the plane takes the colour under the pointer,
-`Esc` to put it down.
+that opens the system colour picker; and an **eyedropper** `I` — arm it and the
+next click anywhere on the plane takes the colour under the pointer, `Esc` to
+put it down.
 
 It asks the **mark**, and the canvas only where there is no mark. A stroke two
 units wide is half soft edge, and a pixel read off that edge is the mark's
@@ -412,4 +412,7 @@ with the even-odd rule — never the bitmap.
 ## Licence
 
 MIT — see [LICENSE](LICENSE). The typefaces are Google Fonts (Fraunces and IBM
-Plex Mono), loaded from Google's CDN under their own open licences.
+Plex Mono), loaded from Google's CDN under their own open licences. The
+eyedropper glyph is `eyedropper` from
+[Bootstrap Icons](https://icons.getbootstrap.com/icons/eyedropper/), MIT; every
+other icon is drawn here.

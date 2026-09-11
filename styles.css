@@ -508,6 +508,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   cursor: pointer;
 }
 .mini.add { width: 26px; height: 26px; padding: 0; font-size: 14px; line-height: 1; }
+/* Bootstrap's eyedropper is a filled glyph, not an outline like the tools. */
+.mini.drop { width: 26px; height: 26px; padding: 0; }
+.mini.drop svg { width: 15px; height: 15px; fill: currentColor; stroke: none; }
 
 .row { display: flex; align-items: center; gap: 9px; }
 .slide { margin-top: 9px; }
