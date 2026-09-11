@@ -250,6 +250,7 @@
   let redoStack = [];
   let draft = null;    // the mark currently being placed
   let pending = null;  // 'point' | 'bend': the live mark is between clicks
+  let pressAt = null;  // where the press that started the mark landed, on screen
   let draftPath = null;
 
   let cw = 0, ch = 0, dpr = 1, rect = { left: 0, top: 0 };
@@ -1312,7 +1313,7 @@
     return false;
   };
 
-  function commitLive() {
+  function commitLive(dragged) {
     const d = draft;
     draft = null;
     pending = null;
@@ -1323,7 +1324,7 @@
 
     // The line tool carries on from where it stopped, so a run of clicks
     // draws a chain. Clicking the same point twice ends it, as does Esc.
-    if (state.tool === 'line' && d.kind === 'line') {
+    if (state.tool === 'line' && d.kind === 'line' && !dragged) {
       draft = newStroke({ kind: 'line', a: d.b, b: d.b });
       pending = 'point';
       setHint(CHAIN_HINT, true);
@@ -1344,7 +1345,7 @@
     commitLive();
   }
 
-  function endDraw() {
+  function endDraw(dragged) {
     if (lasso) { endLasso(); return; }
     if (moving) {
       const m = moving;
@@ -1359,14 +1360,24 @@
     }
     if (!draft) return;
 
-    // Freehand is the only tool that ends on release. Every other mark
-    // stays live when the button comes up and follows the cursor until
-    // the next click sets it — a press that slides a few pixels, which
-    // is most trackpad clicks, must not count as a finished drag.
+    // Freehand always ends on release. Every other mark can be drawn
+    // either way: clicked out corner to corner, or dragged in one go.
     if (draft.kind === 'path') {
       // Freehand comes in jittery; smooth it before it is kept.
       draft.pts = smoothPath(draft.pts, 1.6 / state.view.scale);
       commitLive();
+      return;
+    }
+    if (dragged) {
+      // An arc still owes its bend, so a drag sets the chord and hands
+      // it on to be bent — the same second step the clicked-out arc has.
+      if (draft.kind === 'curve' && !tooSmall(draft)) {
+        pending = 'bend';
+        setHint(BEND_HINT, true);
+        requestDraw();
+        return;
+      }
+      commitLive(true);
       return;
     }
     pending = 'point';
@@ -2056,6 +2067,7 @@
       return;
     }
     mode = 'draw';
+    pressAt = s;
     if (startDraw(w, e) === false) {
       // nothing under the cursor to pick up — drag the plane instead
       mode = 'pan';
@@ -2087,14 +2099,24 @@
     }
   });
 
+  /* A press that slides a few pixels is a click — most trackpad clicks
+     travel that far — but one drawn right out is a drag, and a drag says
+     where the mark ends as plainly as a second click would. Past this
+     many pixels the release sets the mark instead of leaving it live.
+     It sits above every threshold `tooSmall` discards at, so a mark that
+     was drawn out far enough to set is always one worth keeping. */
+  const DRAG_MIN = 6;
+
   function release(e) {
     pointers.delete(e.pointerId);
+    const s = screenPt(e);
     // A quick flick can release past the last pointermove; take the
     // release position as the final one.
     if (mode === 'draw' && (draft || moving || lasso)) {
-      const s = screenPt(e);
       moveDraw(drawPt(s.x, s.y));
     }
+    const dragged = !!pressAt && Math.hypot(s.x - pressAt.x, s.y - pressAt.y) >= DRAG_MIN;
+    pressAt = null;
     if (mode === 'pinch') {
       if (pointers.size < 2) { mode = null; pinchFrom = null; }
       return;
@@ -2104,7 +2126,7 @@
       mode = null;
       return;
     }
-    if (mode === 'draw') { endDraw(); mode = null; }
+    if (mode === 'draw') { endDraw(dragged); mode = null; }
   }
 
   canvas.addEventListener('pointerleave', () => {

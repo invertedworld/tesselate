@@ -28,17 +28,26 @@ and an edit appears to do nothing.
 
 ## Drawing
 
-Shapes are placed click by click: **click to set the first point, move,
-then click again to set it.** Releasing the first click does not finish the
-mark — it stays live and follows the cursor until the second click, and
-`Esc` drops it. Dragging in one motion still works if you prefer it.
+Shapes can be placed either way, and the two mix freely.
+
+**Click by click:** click to set the first point, move, then click again to
+set it. Releasing the first click does not finish the mark — it stays live
+and follows the cursor until the second click. Good for long reaches, and for
+placing a point precisely, since you can take as long as you like over it.
+
+**Or in one drag:** press, pull the mark out, and let go. The release sets it,
+with no second click. A press that slides only a pixel or two is still a
+click — most trackpad clicks travel that far — so the mark has to be drawn
+right out before letting go counts as finishing it.
+
+`Esc` drops a live mark either way.
 
 | Tool | |
 |---|---|
 | **Select** `Space` | Click a mark to pick it up, drag to move it. **Shift-click** adds another to what you are holding, or puts it back down; a **two-finger sweep** takes everything in an area (see below). Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
 | **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Held drag only, and it ignores the grid entirely |
-| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. Hold `Shift` to hold it horizontal, vertical or to 45° — to one of the six isometric ways out on the Iso frame; with a lattice up the length is quantised along that direction too |
-| **Arc** `A` | Two clicks for the ends, then move to bend it and click to set. Hold `Shift` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
+| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. A line pulled out in one drag is a single line, not the start of a chain. Hold `Shift` to hold it horizontal, vertical or to 45° — to one of the six isometric ways out on the Iso frame; with a lattice up the length is quantised along that direction too |
+| **Arc** `A` | Two clicks for the ends — or one drag — then move to bend it and click to set. An arc owes its bend either way, so the drag sets the chord and hands it on to be bent. Hold `Shift` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
 | **Circle** `C` | Click the centre, then click to set the radius; `Shift` quantises it |
 | **Rect** `R` | Click a corner, then the opposite one; `Shift` for a square. On the **Iso** frame it draws a rhombus instead — a face of a cube |
 | **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. Click a mark instead and it takes the current ink. Filling an area again recolours it in place, and an already-filled area can still be cut up by new lines and its parts filled separately |
