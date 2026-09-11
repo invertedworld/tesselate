@@ -1,19 +1,26 @@
 /* ------------------------------------------------------------------
-   Tessera — riso-print drafting studio: warm paper, ink hairlines,
-   one vermilion accent. All colour in the artwork, none in the UI.
+   Tessera — dark grey bench, white paper, one vermilion accent. The
+   tools recede so the work does not have to compete with them; all
+   colour is in the artwork, none in the room around it.
+
+   `ink` is the foreground the rail is written in, `paper` what sits
+   against it — light on dark now, which is why a chip that fills with
+   ink reads as light with dark lettering. The names keep their
+   meaning; only the values change hands.
    ------------------------------------------------------------------ */
 
 :root {
-  --paper: #f4f0e6;
-  --paper-lift: #faf7ef;
-  --shade: #e7e1d2;
-  --ink: #17160f;
-  --ink-60: rgba(23, 22, 15, 0.6);
-  --ink-42: rgba(23, 22, 15, 0.42);
-  --ink-22: rgba(23, 22, 15, 0.22);
-  --ink-12: rgba(23, 22, 15, 0.12);
-  --ink-06: rgba(23, 22, 15, 0.06);
-  --accent: #cf4326;
+  color-scheme: dark;
+  --paper: #212120;
+  --paper-lift: #2e2e2c;
+  --shade: #1a1a19;
+  --ink: #eceae4;
+  --ink-60: rgba(236, 234, 228, 0.6);
+  --ink-42: rgba(236, 234, 228, 0.42);
+  --ink-22: rgba(236, 234, 228, 0.24);
+  --ink-12: rgba(236, 234, 228, 0.14);
+  --ink-06: rgba(236, 234, 228, 0.07);
+  --accent: #e2542f;
   --rail: 268px;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --serif: "Fraunces", "Hoefler Text", Georgia, serif;
@@ -36,17 +43,6 @@ html, body {
 
 body { display: flex; }
 
-/* Paper grain over everything, cheap and static. */
-.grain {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  pointer-events: none;
-  mix-blend-mode: multiply;
-  opacity: 0.5;
-  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.22'/%3E%3C/svg%3E");
-}
-
 /* ---------------- rail ---------------- */
 
 .rail {
@@ -57,7 +53,7 @@ body { display: flex; }
   overflow-x: hidden;
   background: var(--paper-lift);
   border-right: 1px solid var(--ink-22);
-  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.7) inset, -14px 0 26px -22px rgba(23, 22, 15, 0.5);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.05) inset, -18px 0 30px -24px rgba(0, 0, 0, 0.7);
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;
@@ -406,10 +402,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 /* Alpha only reads against something, so every well sits on a check. */
 .chk {
-  background-color: #fff;
+  background-color: #fff;   /* alpha reads against the paper, which is white */
   background-image:
-    linear-gradient(45deg, var(--ink-12) 25%, transparent 25% 75%, var(--ink-12) 75%),
-    linear-gradient(45deg, var(--ink-12) 25%, transparent 25% 75%, var(--ink-12) 75%);
+    linear-gradient(45deg, rgba(0, 0, 0, 0.16) 25%, transparent 25% 75%, rgba(0, 0, 0, 0.16) 75%),
+    linear-gradient(45deg, rgba(0, 0, 0, 0.16) 25%, transparent 25% 75%, rgba(0, 0, 0, 0.16) 75%);
   background-size: 8px 8px;
   background-position: 0 0, 4px 4px;
 }
@@ -471,7 +467,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   text-transform: lowercase;
 }
 .hex::placeholder { color: var(--ink-22); text-transform: none; }
-.hex:focus { outline: none; border-color: var(--ink-42); background: #fff; }
+.hex:focus { outline: none; border-color: var(--ink-42); background: #2b2b29; }
 .hex.bad { border-color: var(--accent); color: var(--accent); }
 
 .pick {
@@ -592,7 +588,7 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 16px; border: 0; bor
   fill: currentColor;
 }
 .cell:hover svg { color: var(--ink); }
-.cell.src { border-color: var(--ink-42); background: #fff; }
+.cell.src { border-color: var(--ink-42); background: rgba(236, 234, 228, 0.1); }
 .cell.src svg { color: var(--accent); }
 .cell.src::after {
   content: "";

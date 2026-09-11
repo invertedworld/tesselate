@@ -222,9 +222,7 @@ units wide is half soft edge, and a pixel read off that edge is the mark's
 colour mixed with whatever is behind it, never the colour the mark is drawn in.
 Click a border and you get the border's colour, the inside of a closed mark and
 you get its interior's, a filled area and you get the fill's; click bare paper
-and it reads the canvas — which is not the screen, because the paper grain lies
-over the window on a multiply blend and anything sampled through it would come
-back tinted and grainy. **Alpha** sets how far through the ink
+and it reads the canvas rather than the screen. **Alpha** sets how far through the ink
 you can see; a colour keeps its short form while it is solid and gains the
 extra two digits the moment it is not, so the swatch and the field always
 agree. Translucent ink is real ink: it fills, strokes, exports and layers like
@@ -356,6 +354,13 @@ Work is kept in `localStorage`, so the table is as you left it.
 marks, no paper — on a clear ground. The SVG is a single `<g>` of vector paths
 instanced once per tile with a rotation, over a block-aligned sheet of at least
 4×4 tiles.
+
+## The room
+
+Dark grey bench, white paper, one vermilion accent. The rail is meant to
+recede: all the colour is in the artwork and none in the room around it, so
+nothing in the tools competes with what is being drawn. The paper is white
+rather than tinted, so a colour on screen is the colour it is.
 
 ## Layout
 

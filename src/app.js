@@ -64,7 +64,7 @@
     return `${attr}="${rgbOf(hex)}"` + (a < 255 ? ` ${attr}-opacity="${+(a / 255).toFixed(4)}"` : '');
   }
 
-  const GROUND = '#ede8db';
+  const GROUND = '#ffffff';
   /* The squares themselves read over the lattice inside them: darker,
      and thicker where there is room for it, with the block's own
      boundaries heavier again. A drafting aid sits under the structure it
@@ -73,6 +73,9 @@
   const RULE_MAJOR = 'rgba(23,22,15,0.46)';
   const SUB_RULE = 'rgba(23,22,15,0.13)';
   const SUB_FINE = 'rgba(23,22,15,0.065)';
+  /* The rail's accent is a shade brighter, for a dark ground; on the
+     paper the original holds, and a mark drawn in the palette's own
+     vermilion still matches it, so the halo knows to darken instead. */
   const ACCENT = '#cf4326';
 
   const MAX_TILES = 1500;   // caps how far you can zoom out
@@ -754,7 +757,27 @@
         else paintShape(entry, hair, entry.fillColor ? 'outline' : undefined);
       });
     }
-    for (const shape of shapes) drawSelectionBox(shape);
+    /* One box to a unit, not to a mark. A group is one thing, and a
+       dashed box round each of its marks said the opposite — loudly,
+       when the group was a figure of a dozen. Marks held loose still get
+       one each, because loose is what they are. */
+    const boxes = new Map();
+    for (const sh of shapes) {
+      const b = shapeBBox(sh);
+      if (!b) continue;
+      const pen = (sh.layer === 'fill' || sh.filled ? 0 : sh.width) / 2;
+      const key = sh.group ? `g${sh.group}` : sh;
+      const had = boxes.get(key);
+      const box = { x0: b.x0 - pen, y0: b.y0 - pen, x1: b.x1 + pen, y1: b.y1 + pen };
+      if (!had) boxes.set(key, box);
+      else {
+        had.x0 = Math.min(had.x0, box.x0);
+        had.y0 = Math.min(had.y0, box.y0);
+        had.x1 = Math.max(had.x1, box.x1);
+        had.y1 = Math.max(had.y1, box.y1);
+      }
+    }
+    for (const box of boxes.values()) drawSelectionBox(box);
   }
 
   // The home square's own frame, where a mark's coordinates mean what
@@ -787,15 +810,11 @@
     ctx.globalAlpha = 1;
   }
 
-  function drawSelectionBox(shape) {
+  function drawSelectionBox(b) {
     const v = state.view;
-    const solid = shape.layer === 'fill' || shape.filled;
-    const pen = solid ? 0 : shape.width;
-    const b = shapeBBox(shape);
-    if (!b) return;
     // Drawn as a quad through the transform so it stays around the mark
     // when the plane is turned.
-    const g = pen / 2 + 7 / v.scale;
+    const g = 7 / v.scale;
     const corners = [
       [b.x0 - g, b.y0 - g], [b.x1 + g, b.y0 - g],
       [b.x1 + g, b.y1 + g], [b.x0 - g, b.y1 + g],
