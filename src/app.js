@@ -832,6 +832,7 @@
     document.getElementById('undo').disabled = !undoStack.length;
     document.getElementById('redo').disabled = !redoStack.length;
     if (!state.shapes.length) closeClearPrompt();
+    setDirty(true);
     saveSoon();
   }
 
@@ -840,6 +841,17 @@
   // Marks are copied rather than mutated, so they carry an id that
   // survives being moved or recoloured.
   let shapeSeq = 1;
+
+  /* Marks arriving from a file or a saved session keep their own ids —
+     a fill names the marks that bound it — so the counters move past
+     whatever came in. */
+  function adoptIds(list) {
+    for (const sh of list) {
+      if (sh.group >= groupSeq) groupSeq = sh.group + 1;
+      if (sh.id == null) sh.id = shapeSeq++;
+      else if (sh.id >= shapeSeq) shapeSeq = sh.id + 1;
+    }
+  }
 
   function newStroke(extra) {
     return Object.assign({
@@ -1566,6 +1578,8 @@
 
     if (meta && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (meta && k === 'y') { e.preventDefault(); redo(); return; }
+    if (meta && k === 's') { e.preventDefault(); saveProject(e.shiftKey); return; }
+    if (meta && k === 'o') { e.preventDefault(); loadProject(); return; }
     if (meta) return;
 
     if (selected && !draft && !pending) {
@@ -2089,23 +2103,219 @@
 
   const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
 
+  /* ---------------- the drawing as a file ----------------
+
+     A .tessera.json holds the artwork and nothing else: the marks, the
+     symmetry block they repeat under, and the three plane settings that
+     change what the pattern looks like. Which tool is in hand, the
+     lattice, the palette — none of that belongs to the drawing.
+
+     Where the browser has the File System Access API, the handle of the
+     file that was opened or saved is kept, so Save writes back to it
+     without asking again; the handle is stashed in IndexedDB so it
+     survives a reload. Everywhere else Save falls back to a download.
+     (The pattern is lifted from swimlane-studio, which does the same
+     for its diagram source.) */
+
+  const FORMAT = 'tessera';
+  const fileNameEl = document.getElementById('fileName');
+  let fileHandle = null;
+  let dirty = false;
+
+  const HANDLE_DB = 'tessera';
+  const HANDLE_STORE = 'handles';
+  const HANDLE_KEY = 'current-file';
+
+  function idbHandle(mode, run) {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) { resolve(undefined); return; }
+      const open = indexedDB.open(HANDLE_DB, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore(HANDLE_STORE);
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const db = open.result;
+        const tx = db.transaction(HANDLE_STORE, mode);
+        const req = run(tx.objectStore(HANDLE_STORE));
+        tx.oncomplete = () => { db.close(); resolve(req && req.result); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+      };
+    });
+  }
+  const getHandle = () => idbHandle('readonly', (st) => st.get(HANDLE_KEY)).catch(() => undefined);
+  const putHandle = (h) => idbHandle('readwrite', (st) => st.put(h, HANDLE_KEY)).catch(() => {});
+  const dropHandle = () => idbHandle('readwrite', (st) => st.delete(HANDLE_KEY)).catch(() => {});
+
+  function showFile(name) {
+    fileNameEl.textContent = name || '';
+    fileNameEl.hidden = !name;
+    fileNameEl.classList.toggle('dirty', !!name && dirty);
+  }
+  function setDirty(v) {
+    dirty = v;
+    fileNameEl.classList.toggle('dirty', !!fileNameEl.textContent && dirty);
+  }
+  function setFile(handle, name) {
+    fileHandle = handle || null;
+    if (handle) putHandle(handle); else dropHandle();
+    showFile(name || (handle && handle.name) || fileNameEl.textContent || '');
+  }
+
+  (async () => {
+    try {
+      const h = await getHandle();
+      if (h) { fileHandle = h; showFile(h.name); }
+    } catch (err) { /* no handle to pick up */ }
+  })();
+
+  // Still allowed to write to it? Chrome drops the grant on a reload and
+  // asks once, the first time you save after coming back.
+  async function writable(handle) {
+    if (!handle.queryPermission) return true;
+    const opts = { mode: 'readwrite' };
+    if ((await handle.queryPermission(opts)) === 'granted') return true;
+    return (await handle.requestPermission(opts)) === 'granted';
+  }
+
+  /* One mark per line: the file stays a diff you can read. */
+  function projectJson() {
+    const head = {
+      format: FORMAT,
+      version: 1,
+      saved: new Date().toISOString(),
+      tile: T,
+      pattern: state.pattern,
+      plane: { clip: state.clip, wrap: state.wrap, diag: state.diag },
+    };
+    const lines = Object.entries(head).map(([k, v]) => ` ${JSON.stringify(k)}: ${JSON.stringify(v)}`);
+    const marks = state.shapes.map((sh) => '  ' + JSON.stringify(sh)).join(',\n');
+    return '{\n' + lines.join(',\n') + ',\n "shapes": [\n' + marks + '\n ]\n}\n';
+  }
+
+  const JSON_TYPES = [{ description: 'Tessera drawing', accept: { 'application/json': ['.json'] } }];
+  const suggestName = () => (fileHandle && fileHandle.name) || `tessera-${stamp()}.json`;
+
+  async function saveProject(asNew) {
+    const text = projectJson();
+    if (window.showSaveFilePicker) {
+      try {
+        let handle = asNew ? null : fileHandle;
+        if (handle && !(await writable(handle))) handle = null;
+        if (!handle) {
+          handle = await window.showSaveFilePicker({ suggestedName: suggestName(), types: JSON_TYPES });
+        }
+        const out = await handle.createWritable();
+        await out.write(text);
+        await out.close();
+        setDirty(false);
+        setFile(handle, handle.name);
+        flash(`Saved ${handle.name}`);
+      } catch (err) {
+        if (err && err.name !== 'AbortError') flash('That file could not be written');
+      }
+      return;
+    }
+    const name = suggestName();
+    download(name, new Blob([text], { type: 'application/json' }));
+    setDirty(false);
+    showFile(name);
+    flash(`Saved ${name}`);
+  }
+
+  function openProject(text, name, handle) {
+    let d = null;
+    try { d = JSON.parse(text); } catch (err) { return flash('That file is not JSON'); }
+    if (!d || !Array.isArray(d.shapes)) return flash('No drawing in that file');
+    const marks = d.shapes.filter((sh) => sh && sh.kind);
+    if (!marks.length) return flash('No marks in that file');
+
+    const p = d.pattern;
+    if (p && p.n >= 1 && p.n <= 4 && Array.isArray(p.cells) && p.cells.length === p.n * p.n) {
+      state.pattern = p;
+      buildPatternGrid();
+    }
+    const plane = d.plane || {};
+    for (const f of ['clip', 'wrap']) if (typeof plane[f] === 'boolean') state[f] = plane[f];
+    if (DIAG_MODES.some(([id]) => id === plane.diag)) setDiag(plane.diag, true);
+    syncToggles();
+
+    cancelDraft();
+    selected = null;
+    adoptIds(marks);
+    replaceShapes(marks);     // undoable: ⌘Z puts back what was on the table
+    setDirty(false);
+    setFile(handle || null, name);
+    flash(`Loaded ${name} — ⌘Z brings back what was there`);
+  }
+
+  const loadInput = document.createElement('input');
+  loadInput.type = 'file';
+  loadInput.accept = '.json,application/json';
+  loadInput.hidden = true;
+  document.body.appendChild(loadInput);
+  loadInput.addEventListener('change', async () => {
+    const file = loadInput.files && loadInput.files[0];
+    if (!file) return;
+    // No handle from the plain input, so a later Save has to ask where.
+    openProject(await file.text(), file.name, null);
+  });
+
+  async function loadProject() {
+    if (window.showOpenFilePicker) {
+      try {
+        const [handle] = await window.showOpenFilePicker({ types: JSON_TYPES });
+        const file = await handle.getFile();
+        openProject(await file.text(), file.name, handle);
+      } catch (err) {
+        if (err && err.name !== 'AbortError') flash('That file could not be read');
+      }
+      return;
+    }
+    loadInput.value = '';   // so the same file can be picked twice
+    loadInput.click();
+  }
+
+  document.getElementById('loadJson').addEventListener('click', loadProject);
+  document.getElementById('saveJson').addEventListener('click', () => saveProject(false));
+  document.getElementById('saveJsonAs').addEventListener('click', () => saveProject(true));
+
   document.getElementById('exportSvg').addEventListener('click', () => {
     if (!state.shapes.length) return flash('Nothing to save yet');
     download(`tessera-${stamp()}.svg`, new Blob([buildSvg()], { type: 'image/svg+xml' }));
     flash('SVG saved');
   });
 
-  document.getElementById('exportPng').addEventListener('click', () => {
-    // Paint one frame with the marks alone, grab it, then put the
-    // drawing aids back.
+  // Paint one frame with the marks alone, grab it, then put the drawing
+  // aids back. toBlob takes the canvas as it stands at the call, so the
+  // repaint can be asked for straight away.
+  function cleanPng() {
     cleanFrame = true;
     drawAll();
     cleanFrame = false;
-    canvas.toBlob((b) => {
-      if (b) download(`tessera-${stamp()}.png`, b);
-      flash('PNG saved — marks only, on a clear ground');
-    }, 'image/png');
+    const blob = new Promise((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('no png'))), 'image/png');
+    });
     requestDraw();
+    return blob;
+  }
+
+  document.getElementById('exportPng').addEventListener('click', () => {
+    cleanPng().then((b) => {
+      download(`tessera-${stamp()}.png`, b);
+      flash('PNG saved — marks only, on a clear ground');
+    }, () => flash('The image could not be made'));
+  });
+
+  document.getElementById('copyPng').addEventListener('click', () => {
+    if (!state.shapes.length) return flash('Nothing to copy yet');
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      return flash('This browser keeps images off the clipboard');
+    }
+    /* The blob is handed over as a promise rather than awaited first:
+       the clipboard only opens to a click, and awaiting spends it. */
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': cleanPng() })]).then(
+      () => flash('PNG copied — paste it anywhere'),
+      () => flash('The browser would not give up the clipboard'),
+    );
   });
 
   function buildSvg() {
@@ -2193,11 +2403,7 @@
     try { d = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (err) { d = null; }
     if (!d) return;
     if (Array.isArray(d.shapes)) state.shapes = d.shapes.filter((s) => s && s.kind);
-    for (const sh of state.shapes) {
-      if (sh.group >= groupSeq) groupSeq = sh.group + 1;
-      if (sh.id == null) sh.id = shapeSeq++;
-      else if (sh.id >= shapeSeq) shapeSeq = sh.id + 1;
-    }
+    adoptIds(state.shapes);
     if (d.pattern && d.pattern.n >= 1 && d.pattern.n <= 4 && Array.isArray(d.pattern.cells)
         && d.pattern.cells.length === d.pattern.n * d.pattern.n) state.pattern = d.pattern;
     if (Array.isArray(d.palettes)) {
@@ -2236,6 +2442,7 @@
   syncToggles();
   resize();
   afterChange();
+  setDirty(false);   // what was restored is what was last put down
   setHint(HINTS.base);
 
   window.addEventListener('resize', resize);

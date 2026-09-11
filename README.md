@@ -88,6 +88,51 @@ wrap `W` · snap `S` · subdivide `D`
 *Clear* asks before it goes ahead, in the rail rather than in a browser box —
 and `⌘Z` brings the marks back even after that.
 
+### Off the table
+
+| | |
+|---|---|
+| **Load** `⌘O` / **Save** `⌘S` / **Save as** `⇧⌘S` | The drawing as a `.json` file — see below |
+| **Save SVG** | The pattern as vector paths, several whole blocks of it, with the alignment grid and crop marks left off |
+| **Save PNG** | The same frame you are looking at, marks only, on a clear ground |
+| **Copy PNG** | That same image straight onto the clipboard, to paste anywhere |
+
+## The drawing as a file
+
+A saved `.json` holds the artwork and nothing else: the marks, the symmetry
+block they repeat under, and the three plane settings that change what the
+pattern looks like — clip, wrap and the 45° turn. Which tool is in hand, the
+lattice, the palette: none of that belongs to the drawing, so none of it is
+written.
+
+It is meant to be read. One mark per line, so a drawing diffs like source:
+
+    {
+     "format": "tessera",
+     "version": 1,
+     "saved": "2026-09-11T07:01:13.385Z",
+     "tile": 1000,
+     "pattern": {"n":2,"cells":[0,1,3,2]},
+     "plane": {"clip":true,"wrap":false,"diag":"off"},
+     "shapes": [
+      {"id":1,"layer":"stroke","kind":"line","color":"#cf4326","width":9,"pts":[…]},
+      {"id":2,"layer":"fill","color":"#2b4a9c40","loops":[[…]]}
+     ]
+    }
+
+Coordinates are in tile units — the tile is `tile` across, 1000 — so a drawing
+is resolution-free and stays exact at any zoom.
+
+Where the browser has the File System Access API (Chrome, Edge), the file you
+opened or saved is **kept**: *Save* writes straight back to it without asking
+again, and the handle is stashed in IndexedDB so it survives a reload — the
+first save after coming back may ask once for permission, then goes quiet.
+*Save as* always asks for a new place. Elsewhere *Save* downloads and *Load*
+opens a file chooser. The file in play is named under the buttons, with a
+vermilion dot while the drawing has moved on since it was written.
+
+Loading is undoable: `⌘Z` puts back whatever was on the table.
+
 Pan by two-finger scrolling, middle/right-dragging, or dragging empty space
 with the select tool.
 
