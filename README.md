@@ -110,8 +110,8 @@ pasted fill goes on naming the borders it arrived with. Each paste steps a
 little further from the last so they do not stack, and lands held by the select
 tool, ready to be dragged into place.
 
-**Group** `⌘G` binds what you are holding into one thing that moves, recolours
-and goes as a unit; **Ungroup** `⇧⌘G` lets it loose. A fill made against
+**Group** `G` binds what you are holding into one thing that moves, recolours
+and goes as a unit; **Ungroup** `U` lets it loose. A fill made against
 several marks is grouped with them already — this is the same binding, by hand.
 The two buttons under the tools say when they apply: Group wants two separate
 things in hand, Ungroup wants something bound.
@@ -144,9 +144,8 @@ to carry across the seam.
 
 Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
 undo/redo `⌘Z` / `⇧⌘Z` · cut/copy/paste `⌘X` `⌘C` `⌘V` ·
-group `⌘G` / `⇧⌘G` · recentre `H` ·
-tile rules `G` · clip `K` ·
-wrap `W` · snap `S` · subdivide `D`
+group `G` / ungroup `U` (or `⌘G` / `⇧⌘G`) · eyedropper `I` · recentre `H` ·
+tile rules `T` · clip `K` · wrap `W` · snap `S` · subdivide `D`
 
 ### Off the table
 

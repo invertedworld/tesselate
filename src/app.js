@@ -2256,7 +2256,10 @@
     if (k === '0') { setColor(currentColors()[9]); return; }
     if (k === '[') { setWidth(state.width - (state.width > 12 ? 4 : 1)); return; }
     if (k === ']') { setWidth(state.width + (state.width >= 12 ? 4 : 1)); return; }
-    if (k === 'g') { toggle('grid'); return; }
+    if (k === 'g') { groupPicked(); return; }
+    if (k === 'u') { ungroupPicked(); return; }
+    // Tile rules gave up G to grouping; T for tiles.
+    if (k === 't') { toggle('grid'); return; }
     if (k === 's') { toggle('snap'); return; }
     if (k === 'd') { setSub(SUBS[(SUBS.indexOf(state.sub) + 1) % SUBS.length]); return; }
     if (k === 'k') { toggle('clip'); return; }
