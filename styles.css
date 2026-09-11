@@ -611,6 +611,7 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 16px; border: 0; bor
 #stage.outside { cursor: grab; }
 #stage.selecting { cursor: default; }
 #stage.grabbable { cursor: move; }
+#stage.sweeping { cursor: none; }   /* the drawn corner is the pointer */
 
 .hud {
   position: absolute;

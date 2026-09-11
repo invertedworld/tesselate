@@ -1602,7 +1602,14 @@
      up wholly inside it is picked up when the fingers stop. The corner
      follows the fingers, the same way the paper does when panning. */
   function sweepLasso(s, dx, dy) {
-    if (!lasso) lasso = { a: { x: s.x, y: s.y }, b: { x: s.x, y: s.y }, timer: 0 };
+    if (!lasso) {
+      lasso = { a: { x: s.x, y: s.y }, b: { x: s.x, y: s.y }, timer: 0 };
+      /* Two fingers on a trackpad cannot move the pointer, so nothing
+         follows them and the gesture reads as dead. The far corner is
+         what is actually moving, so it becomes the pointer: the real one
+         is hidden for the sweep and a drawn one takes its place. */
+      canvas.classList.add('sweeping');
+    }
     lasso.b.x -= dx;
     lasso.b.y -= dy;
     clearTimeout(lasso.timer);
@@ -1643,6 +1650,7 @@
     clearTimeout(lasso.timer);
     const box = drop ? null : lassoBox();
     lasso = null;
+    canvas.classList.remove('sweeping');
     if (drop) select([]);
     if (box) {
       const caught = caughtBy(box);
@@ -1657,7 +1665,9 @@
 
   function drawLasso() {
     const box = lassoBox();
-    if (!box) return;
+    // The drawn pointer shows from the first flick, before the box is
+    // big enough to be worth outlining.
+    if (!box) { drawSweepPointer(); return; }
     const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]
       .map(([x, y]) => { const q = fromTileSpace({ x, y }); return w2s(q.x, q.y); });
     ctx.save();
@@ -1672,6 +1682,30 @@
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     ctx.stroke();
+    ctx.restore();
+    drawSweepPointer();
+  }
+
+  // The corner the fingers are dragging, drawn as the pointer it stands in for.
+  function drawSweepPointer() {
+    if (!lasso) return;
+    const p = lasso.b;
+    const arm = 9;
+    ctx.save();
+    ctx.strokeStyle = ACCENT;
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(p.x - arm, p.y); ctx.lineTo(p.x - 3, p.y);
+    ctx.moveTo(p.x + 3, p.y); ctx.lineTo(p.x + arm, p.y);
+    ctx.moveTo(p.x, p.y - arm); ctx.lineTo(p.x, p.y - 3);
+    ctx.moveTo(p.x, p.y + 3); ctx.lineTo(p.x, p.y + arm);
+    ctx.stroke();
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+    ctx.fillStyle = ACCENT;
+    ctx.fill();
     ctx.restore();
   }
 

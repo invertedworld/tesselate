@@ -77,7 +77,9 @@ what will move.
 **Sweeping an area.** With the select tool up, the two-finger scroll that
 would pan the plane drags the far corner of a box out from wherever the
 pointer is; the count follows as it grows, and everything **wholly inside** it
-is held when your fingers stop. Wholly, not merely touched, so sweeping over a
+is held when your fingers stop. Two fingers on a trackpad cannot move the
+pointer, so for the length of the sweep the real one is hidden and the corner
+you are dragging is drawn in its place. Wholly, not merely touched, so sweeping over a
 figure does not drag in the ground it sits on. `Esc` drops the sweep. The plane
 still pans by dragging empty paper or with a middle/right-drag, and pinch still
 zooms.
