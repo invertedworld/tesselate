@@ -593,30 +593,42 @@
     ctx.lineJoin = 'round';
 
     const pad = overhang(list);
-    for (let j = R.j0 - pad; j <= R.j1 + pad; j++) {
-      for (let i = R.i0 - pad; i <= R.i1 + pad; i++) {
-        ctx.save();
-        tileKey = `${mod(i, state.pattern.n)},${mod(j, state.pattern.n)}`;
-        ctx.translate(i * T, j * T);
-        const r = rotAt(state.pattern, i, j);
-        if (r) {
-          ctx.translate(T / 2, T / 2);
-          ctx.rotate((r * Math.PI) / 2);
-          ctx.translate(-T / 2, -T / 2);
+    const overTiles = (marks) => {
+      for (let j = R.j0 - pad; j <= R.j1 + pad; j++) {
+        for (let i = R.i0 - pad; i <= R.i1 + pad; i++) {
+          ctx.save();
+          tileKey = `${mod(i, state.pattern.n)},${mod(j, state.pattern.n)}`;
+          ctx.translate(i * T, j * T);
+          const r = rotAt(state.pattern, i, j);
+          if (r) {
+            ctx.translate(T / 2, T / 2);
+            ctx.rotate((r * Math.PI) / 2);
+            ctx.translate(-T / 2, -T / 2);
+          }
+          if (state.clip) {
+            ctx.beginPath();
+            ctx.rect(0, 0, T, T);
+            ctx.clip();
+          }
+          for (const o of offs) {
+            if (o[0] || o[1]) ctx.translate(o[0] * T, o[1] * T);
+            for (const sh of marks) paintShape(sh, hair);
+            if (o[0] || o[1]) ctx.translate(-o[0] * T, -o[1] * T);
+          }
+          ctx.restore();
         }
-        if (state.clip) {
-          ctx.beginPath();
-          ctx.rect(0, 0, T, T);
-          ctx.clip();
-        }
-        for (const o of offs) {
-          if (o[0] || o[1]) ctx.translate(o[0] * T, o[1] * T);
-          for (const sh of list) paintShape(sh, hair);
-          if (o[0] || o[1]) ctx.translate(-o[0] * T, -o[1] * T);
-        }
-        ctx.restore();
       }
-    }
+    };
+
+    /* With every mark cut at its own edge, a square can be finished
+       before the next is started. Without clipping a mark runs over its
+       neighbours, and finishing square by square puts everything the
+       next square draws on top of everything this one drew — a fill two
+       squares along landing over a border already laid down. So the
+       plane is painted mark by mark instead, each across every square,
+       and depth means the same thing everywhere. */
+    if (state.clip) overTiles(list);
+    else for (const sh of list) overTiles([sh]);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (cleanFrame) return;

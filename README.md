@@ -312,7 +312,11 @@ presets are stored relative to it.
   block's boundaries heavier. Display only
 - **Clip to tile** — on cuts every mark at the tile's edge. Off by default, so
   a mark that runs past the seam bleeds over its neighbours and overlaps them,
-  which is usually what you want while drawing
+  which is usually what you want while drawing. With it off the plane is
+  painted mark by mark across every square rather than square by square, so
+  depth means the same thing everywhere: finishing one square before starting
+  the next would put everything the next square draws over everything this one
+  drew, and a fill two squares along would land on a border already laid down
 - **Wrap at edges** — a mark leaving one edge re-enters at the opposite one,
   for motifs that must run continuously
 - **Grid** / **Snap to grid** — the alignment lattice, above
