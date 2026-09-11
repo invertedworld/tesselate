@@ -488,6 +488,23 @@
     return list;
   }
 
+  /* A mark may run past its own square, and with clipping off it shows
+     there. So a square just off screen can still put ink on screen, and
+     the paint has to reach further than the view does. Capped, since a
+     very long mark would otherwise have us painting the whole plane. */
+  function overhang(list) {
+    if (state.clip) return 0;
+    let lo = 0, hi = T;
+    for (const sh of list) {
+      const b = shapeBBox(sh);
+      if (!b) continue;
+      const pen = (sh.width || 0) / 2;
+      lo = Math.min(lo, b.x0 - pen, b.y0 - pen);
+      hi = Math.max(hi, b.x1 + pen, b.y1 + pen);
+    }
+    return clamp(Math.max(Math.ceil(-lo / T), Math.ceil((hi - T) / T)), 0, 3);
+  }
+
   function drawAll() {
     const { scale } = state.view;
     const R = tileRange();
@@ -512,8 +529,9 @@
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    for (let j = R.j0; j <= R.j1; j++) {
-      for (let i = R.i0; i <= R.i1; i++) {
+    const pad = overhang(list);
+    for (let j = R.j0 - pad; j <= R.j1 + pad; j++) {
+      for (let i = R.i0 - pad; i <= R.i1 + pad; i++) {
         ctx.save();
         ctx.translate(i * T, j * T);
         const r = rotAt(state.pattern, i, j);
@@ -1537,6 +1555,7 @@
     // read gives both the barriers and which mark made each of them.
     const offs = state.wrap ? WRAP : ORIGIN;
     let barriers = 0;
+    let thinnest = Infinity;   // the narrowest wall, in cells
     for (const o of offs) {
       if (o[0] || o[1]) fctx.translate(o[0] * T, o[1] * T);
       state.shapes.forEach((s, idx) => {
@@ -1555,6 +1574,7 @@
           fctx.lineWidth = w;
           fctx.stroke(path);
           paintJunctions(fctx, s, w);
+          if (w * k < thinnest) thinnest = w * k;
         }
         barriers++;
       });
@@ -1591,7 +1611,14 @@
     }
     const walls = [...bounding].map((i) => state.shapes[i]).filter(Boolean);
 
-    const grow = FILL_GROW;
+    /* How far the flood may be grown — for the bridge, and for the tuck
+       at the end — is set by the thinnest wall in play. Both eat into a
+       wall from the inside, and neither may eat one through: a mark two
+       cells wide on the scratch grid can spare none, so a thin outline
+       gets no bridging at all. A fill that stops a hair short of a pinch
+       is a great deal better than one that escapes the shape entirely,
+       which is what a 5-unit outline used to let it do. */
+    const grow = clamp(Math.floor((thinnest - 1) / 2), 0, FILL_GROW);
 
     /* Where two marks converge, the passage between them narrows below
        one cell of the grid long before the marks themselves meet, and
@@ -2590,11 +2617,14 @@
         return false;   // backed out of the picker, or the write failed
       }
     }
+    /* No file picker here — Safari and Firefox have no File System
+       Access API — so the drawing goes to the downloads folder under a
+       name of its own, and Save cannot write back over it. */
     const name = suggestName();
     download(name, new Blob([text], { type: 'application/json' }));
     setDirty(false);
     showFile(name);
-    flash(`Saved ${name}`);
+    flash(`Downloaded ${name} — this browser has no file picker`);
     return true;
   }
 
@@ -2650,6 +2680,17 @@
     }
     loadInput.value = '';   // so the same file can be picked twice
     loadInput.click();
+  }
+
+  // Say what the buttons will actually do where there is no picker.
+  if (!window.showSaveFilePicker) {
+    const note = ' · this browser has no file picker, so it goes to your downloads';
+    for (const id of ['saveJson', 'saveJsonAs']) {
+      const b = document.getElementById(id);
+      b.title = b.title.replace(/ — .*$/, '') + note;
+    }
+    const l = document.getElementById('loadJson');
+    l.title = l.title.replace(/ — .*$/, '') + ' · from a file chooser';
   }
 
   document.getElementById('loadJson').addEventListener('click', loadProject);

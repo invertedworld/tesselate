@@ -170,12 +170,14 @@ It is meant to be read. One mark per line, so a drawing diffs like source:
 Coordinates are in tile units — the tile is `tile` across, 1000 — so a drawing
 is resolution-free and stays exact at any zoom.
 
-Where the browser has the File System Access API (Chrome, Edge), the file you
-opened or saved is **kept**: *Save* writes straight back to it without asking
+Where the browser has the File System Access API (**Chrome and Edge only** —
+Safari and Firefox have none), the file you opened or saved is **kept**: *Save* writes straight back to it without asking
 again, and the handle is stashed in IndexedDB so it survives a reload — the
 first save after coming back may ask once for permission, then goes quiet.
-*Save as* always asks for a new place. Elsewhere *Save* downloads and *Load*
-opens a file chooser. The file in play is named under the buttons, with a
+*Save as* always asks for a new place. **Elsewhere there is no picker at all**:
+both *Save* and *Save as* drop the file in your downloads folder under a name
+of their own, neither can write back over what you opened, and *Load* opens the
+ordinary file chooser. The buttons say so in their tooltips on those browsers. The file in play is named under the buttons, with a
 vermilion dot while the drawing has moved on since it was written.
 
 Opening a drawing, or starting one, is a new session rather than an edit, so
@@ -326,6 +328,13 @@ The fill rasterises the tile's marks into a scratch grid only to work out
 since the gap where two marks converge is a diagonal channel), bridges the cell
 or two the grid loses where that gap pinches shut, walks the boundary into
 closed loops and simplifies them.
+
+How far it may bridge is set by the **thinnest mark in play**. The bridge eats
+into a wall from the inside, and a wall it eats through is no wall: an outline
+five units across used to let the fill straight out into the rest of the tile.
+A mark only two cells across on the scratch grid can spare none, so a hairline
+outline gets no bridging at all — a fill that stops a hair short of a pinch
+being a great deal better than one that escapes the shape.
 
 A grid can only place an edge to the nearest cell, which leaves a fill either
 short of the mark bounding it or spilling past it — and no amount of tuning the
