@@ -601,6 +601,13 @@
 
     applyView();
 
+    /* The glow behind what is in hand goes down before the marks, so
+       they paint over it and nothing has to be put back afterwards.
+       Drawing it on top and then repainting the held marks over it
+       covered whatever else stood above them — a fill eating the border
+       of the mark beside it, ragged edge and all. */
+    if (!cleanFrame) drawHaloes();
+
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -746,17 +753,17 @@
      group holds a fill and the borders around it, and repainting them in
      the order they sit in the list put the fill last, burying every
      border it had. */
+  function heldNow() {
+    return (moving ? moving.previews : heldMarks()).filter(Boolean);
+  }
+
+  function drawHaloes() {
+    for (const shape of heldNow()) inTileFrame(() => drawHalo(shape));
+  }
+
   function drawSelection() {
-    const shapes = (moving ? moving.previews : heldMarks()).filter(Boolean);
+    const shapes = heldNow();
     if (!shapes.length) return;
-    const hair = 0.9 / state.view.scale;
-    for (const shape of shapes) inTileFrame(() => drawHalo(shape));
-    for (const entry of paintOrder(shapes)) {
-      inTileFrame(() => {
-        if (entry.inside) paintShape(entry.inside, hair, 'inside');
-        else paintShape(entry, hair, entry.fillColor ? 'outline' : undefined);
-      });
-    }
     /* One box to a unit, not to a mark. A group is one thing, and a
        dashed box round each of its marks said the opposite — loudly,
        when the group was a figure of a dozen. Marks held loose still get
