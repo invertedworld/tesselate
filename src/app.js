@@ -65,7 +65,6 @@
   }
 
   const GROUND = '#ede8db';
-  const TILE_BG = '#f4f0e5';
   const RULE_MINOR = 'rgba(23,22,15,0.09)';
   const SUB_RULE = 'rgba(23,22,15,0.14)';
   const SUB_FINE = 'rgba(23,22,15,0.07)';
@@ -510,12 +509,6 @@
 
     applyView();
 
-    if (!cleanFrame) {
-      // the square being worked in reads a shade lighter than the rest
-      ctx.fillStyle = TILE_BG;
-      ctx.fillRect(activeTile.i * T, activeTile.j * T, T, T);
-    }
-
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -547,8 +540,7 @@
     if (cleanFrame) return;
 
     if (state.grid) drawRules(R);
-    if (state.sub > 1) drawSubGrid(R.step);
-    drawFrame();
+    if (state.sub > 1) drawSubGrid(R);
     if (picked.length) drawSelection();
     if (lasso) drawLasso();
     if (hoverSnap) drawSnapMark();
@@ -718,18 +710,28 @@
   }
 
   // The drafting lattice, drawn on the drawing surface only.
-  function drawSubGrid(step) {
-    if (step / state.sub < 5) return;   // too dense to read
-    // The lattice sits on the square being worked in. A square lattice
-    // and a diamond one both look the same under a quarter-turn, so the
-    // tile's own rotation can be ignored here.
-    const ax = activeTile.i * T, ay = activeTile.j * T;
-    const hair = (a, b, c, d) => hairLine(ax + a, ay + b, ax + c, ay + d);
+  /* The lattice lies over the whole plane, not just the square the
+     pointer is in, and it is turned with each square: a quarter-turn
+     carries a square lattice onto itself but not a triangular one, and
+     what is drawn has to be what a mark placed there would line up
+     with. */
+  function tileFrames(R) {
+    const out = [];
+    for (let j = R.j0; j <= R.j1; j++) {
+      for (let i = R.i0; i <= R.i1; i++) out.push([i, j, rotAt(state.pattern, i, j)]);
+    }
+    return out;
+  }
+
+  function drawSubGrid(R) {
+    if (R.step / state.sub < 5) return;          // too dense to read
+    const frames = tileFrames(R);
+    if (frames.length > 160) return;             // more squares than it helps to rule
     const eff = effSub();
     // Finer levels first and fainter, so the lattice you asked for stays
     // the one that reads.
-    if (eff > state.sub) latticePass(eff, eff / state.sub, SUB_FINE, hair);
-    latticePass(state.sub, 1, SUB_RULE, hair);
+    if (eff > state.sub) latticePass(eff, eff / state.sub, SUB_FINE, frames);
+    latticePass(state.sub, 1, SUB_RULE, frames);
   }
 
   // y = m·x + c, cut to the tile square.
@@ -742,11 +744,27 @@
     hair(x0, y0, x1, y1);
   }
 
-  function latticePass(n, skip, colour, hair) {
-    const cell = T / n;
+  function latticePass(n, skip, colour, frames) {
     ctx.lineWidth = 1;
     ctx.strokeStyle = colour;
     ctx.beginPath();
+    for (const [i, j, rot] of frames) {
+      const put = (x, y) => {
+        let dx = x - T / 2, dy = y - T / 2;
+        for (let k = rot; k > 0; k--) { const t = dx; dx = -dy; dy = t; }
+        return [dx + T / 2 + i * T, dy + T / 2 + j * T];
+      };
+      const hair = (a, b, c, d) => {
+        const p = put(a, b), q = put(c, d);
+        hairLine(p[0], p[1], q[0], q[1]);
+      };
+      latticeLines(n, skip, hair);
+    }
+    ctx.stroke();
+  }
+
+  function latticeLines(n, skip, hair) {
+    const cell = T / n;
 
     if (diagGrid()) {
       const { w, h } = isoBasis(n);
@@ -764,7 +782,6 @@
       for (let k = 0; k <= Math.floor((T + slope * T) / h); k++) {
         if (!drop(k)) clipHair(-slope, k * h, hair);
       }
-      ctx.stroke();
       return;
     }
 
@@ -773,7 +790,6 @@
       hair(i * cell, 0, i * cell, T);
       hair(0, i * cell, T, i * cell);
     }
-    ctx.stroke();
   }
 
   // Where the next point will actually land.
@@ -793,18 +809,6 @@
   }
 
   // Printer's crop marks around the drawing surface.
-  function drawFrame() {
-    const ax = activeTile.i * T, ay = activeTile.j * T;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(23,22,15,0.3)';
-    ctx.beginPath();
-    hairLine(ax, ay, ax + T, ay);
-    hairLine(ax + T, ay, ax + T, ay + T);
-    hairLine(ax + T, ay + T, ax, ay + T);
-    hairLine(ax, ay + T, ax, ay);
-    ctx.stroke();
-  }
-
   /* ---------------- history ---------------- */
 
   function commit(shape) {

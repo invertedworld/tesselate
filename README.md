@@ -115,11 +115,13 @@ a mark moves every copy of it, since there is only ever one shape — the plane
 just repeats it. Whatever you move comes to the top, so it sits above what you
 moved it onto.
 
-**Any square is the drawing surface.** Whichever one the pointer is over
-becomes live — its wash, crop marks and lattice follow the mouse — and it holds
-still while you place a mark. There is still only one set of marks: a point is
-mapped back through that square's own placement and quarter-turn, so drawing in
-a turned tile puts the mark exactly where you drew it and the pattern follows.
+**Any square is the drawing surface.** Whichever one the pointer is over is
+the one you are drawing in, and it holds still while you place a mark. Nothing
+is lit up to say so: the lattice is ruled across the whole plane instead, every
+square the same, so there is no highlight following the mouse to watch. There
+is still only one set of marks — a point is mapped back through that square's
+own placement and quarter-turn, so drawing in a turned tile puts the mark
+exactly where you drew it and the pattern follows.
 
 Marks may start on the tile edge and run past it — that is how a motif is made
 to carry across the seam.
@@ -138,7 +140,7 @@ wrap `W` · snap `S` · subdivide `D`
 |---|---|
 | **New** | A clean tile: it lets go of whatever file the drawing came from and drops the undo history with it. With marks on the table it asks *Do you want to save your changes?* first — in the rail, not in a browser box. **Yes** saves and then starts over, and backing out of the file picker leaves everything as it was; **No** starts over anyway; **Cancel** or `Esc` goes back |
 | **Load** `⌘O` / **Save** `⌘S` / **Save as** `⇧⌘S` | The drawing as a `.json` file — see below |
-| **Save SVG** | The pattern as vector paths, several whole blocks of it, with the alignment grid and crop marks left off |
+| **Save SVG** | The pattern as vector paths, several whole blocks of it, with the rules and the lattice left off |
 | **Save PNG** | The same frame you are looking at, marks only, on a clear ground |
 | **Copy PNG** | That same image straight onto the clipboard, to paste anywhere |
 
@@ -233,6 +235,11 @@ Three frames to draft in:
   every box you pull out is a face of a cube — three drags make one. `Shift`
   makes the sides equal. `Shift` on a line or an arc holds it to one of the six
   ways out, a whole number of steps along.
+
+  The lattice is ruled over every square, and **turned with each of them**: a
+  quarter-turn carries a square lattice onto itself but not a triangular one,
+  and what is drawn has to be what a mark placed there would line up with. It
+  is dropped when the squares get too small or too many for it to help.
 
   The upright lines are the tile's own columns, so they land on its edges; the
   rows they carry cannot also divide the tile, because a triangular lattice and
