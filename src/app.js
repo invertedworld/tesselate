@@ -1225,6 +1225,8 @@
     const units = new Set(marks.map((sh) => sh.group || sh));
     g.disabled = units.size < 2;
     u.disabled = !marks.some((sh) => sh.group);
+    document.getElementById('turnLeftBtn').disabled = !marks.length;
+    document.getElementById('turnRightBtn').disabled = !marks.length;
     document.getElementById('cutBtn').disabled = !marks.length;
     document.getElementById('copyBtn').disabled = !marks.length;
     document.getElementById('pasteBtn').disabled = !clipboard.length;
@@ -1249,6 +1251,30 @@
     replaceShapes(next);
     select(picked.map((sh) => swap.get(sh) || sh));
     flash(`${marks.length} marks grouped`);
+  }
+
+  /* Turning what is in hand. Several marks turn about the centre of what
+     they make together, so a figure keeps its shape rather than each
+     mark spinning on its own. */
+  function turnHeld(eighths) {
+    const marks = heldMarks();
+    if (!marks.length) return flash('Nothing in hand to turn');
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const sh of marks) {
+      const b = shapeBBox(sh);
+      if (!b) continue;
+      x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0);
+      x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1);
+    }
+    if (x0 === Infinity) return flash('Nothing in hand to turn');
+    const ang = (eighths * Math.PI) / 4;
+    let turned = marks.map((sh) => rotateShape(sh, (x0 + x1) / 2, (y0 + y1) / 2, ang));
+    const [hx, hy] = homeShift(turned);
+    if (hx || hy) turned = turned.map((sh) => translateShape(sh, hx, hy));
+    const swap = new Map(marks.map((sh, k) => [sh, turned[k]]));
+    replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), turned));
+    select(picked.map((sh) => swap.get(sh) || sh));
+    flash(`Turned 45° ${eighths > 0 ? 'clockwise' : 'anticlockwise'}`);
   }
 
   function ungroupPicked() {
@@ -2052,6 +2078,8 @@
 
   document.getElementById('groupBtn').addEventListener('click', groupPicked);
   document.getElementById('ungroupBtn').addEventListener('click', ungroupPicked);
+  document.getElementById('turnLeftBtn').addEventListener('click', () => turnHeld(-1));
+  document.getElementById('turnRightBtn').addEventListener('click', () => turnHeld(1));
   document.getElementById('cutBtn').addEventListener('click', () => copyToSystem(copyHeld(true)));
   document.getElementById('copyBtn').addEventListener('click', () => copyToSystem(copyHeld(false)));
   document.getElementById('pasteBtn').addEventListener('click', () => pasteMarks(clipboard));

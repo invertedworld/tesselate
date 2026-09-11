@@ -380,6 +380,34 @@ function snapPoint(p, n) {
 
 // Returns a NEW shape: shapes are treated as immutable so the undo
 // stack and the Path2D cache can hold them by identity.
+/* Turning a mark about a point. Every kind holds its own points, so the
+   turn is applied to each of them — except an upright box, which cannot
+   hold a turn at all: it becomes the four-cornered polygon the turn has
+   just made of it. */
+function rotateShape(s, cx, cy, ang) {
+  const c = Math.cos(ang), n = Math.sin(ang);
+  const mp = (p) => {
+    const dx = p.x - cx, dy = p.y - cy;
+    return { x: cx + dx * c - dy * n, y: cy + dx * n + dy * c };
+  };
+  const out = Object.assign({}, s);
+  switch (s.kind) {
+    case 'path': case 'poly': out.pts = s.pts.map(mp); break;
+    case 'line': out.a = mp(s.a); out.b = mp(s.b); break;
+    case 'curve': out.a = mp(s.a); out.b = mp(s.b); out.c = mp(s.c); break;
+    case 'circle': out.c = mp(s.c); break;
+    case 'rect': {
+      const { x, y, w, h } = s;
+      out.kind = 'poly';
+      out.pts = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }].map(mp);
+      delete out.x; delete out.y; delete out.w; delete out.h;
+      break;
+    }
+    case 'region': out.loops = s.loops.map((l) => l.map(mp)); break;
+  }
+  return out;
+}
+
 function translateShape(s, dx, dy) {
   const mp = (p) => ({ x: p.x + dx, y: p.y + dy });
   const out = Object.assign({}, s);

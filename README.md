@@ -85,6 +85,12 @@ Because a drag now sweeps, the plane is panned with the select tool up by
 two-finger scrolling or a middle/right-drag rather than by dragging the paper.
 Pinch still zooms.
 
+**Turn 45°**, either way, turns what you are holding about the centre of what
+it makes together — so a figure of several marks keeps its shape instead of
+each mark spinning on its own spot. An upright box cannot hold a turn, so it
+becomes the four-cornered polygon the turn has just made of it, and carries on
+behaving like one.
+
 **Cut** `⌘X`, **Copy** `⌘C` and **Paste** `⌘V` work on what you are holding.
 The marks go on the **real clipboard**, written as the same JSON a drawing is
 saved as, so a figure can be carried to another tile, another tab, another day —

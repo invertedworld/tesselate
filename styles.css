@@ -194,6 +194,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .exports { margin-top: 12px; }   /* the drawing's own file, then what comes off it */
 .binders { margin-top: 8px; }
 .binders + .binders { margin-top: 6px; }
+.wide.turn { gap: 6px; }
+.wide.turn svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .wide:disabled { opacity: 0.32; cursor: default; }
 .wide:disabled:hover { background: transparent; }
 
