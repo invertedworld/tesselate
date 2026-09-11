@@ -174,10 +174,15 @@ Where the browser has the File System Access API (**Chrome and Edge only** —
 Safari and Firefox have none), the file you opened or saved is **kept**: *Save* writes straight back to it without asking
 again, and the handle is stashed in IndexedDB so it survives a reload — the
 first save after coming back may ask once for permission, then goes quiet.
-*Save as* always asks for a new place. **Elsewhere there is no picker at all**:
-both *Save* and *Save as* drop the file in your downloads folder under a name
-of their own, neither can write back over what you opened, and *Load* opens the
-ordinary file chooser. The buttons say so in their tooltips on those browsers. The file in play is named under the buttons, with a
+*Save as* always asks for a new place.
+
+**Elsewhere there is no picker at all**, so nothing can be written back over
+and the buttons stop pretending otherwise: they read **Download** and **Download
+as** on those browsers, and the exports beside them read Download SVG and
+Download PNG, because that is where all four end up. Download keeps offering
+the name it last used, which is as near as a download gets to writing back over
+something; Download as takes a fresh one. *Load* opens the ordinary file
+chooser. The file in play is named under the buttons, with a
 vermilion dot while the drawing has moved on since it was written.
 
 Opening a drawing, or starting one, is a new session rather than an edit, so

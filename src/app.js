@@ -2503,7 +2503,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
 
-  const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 
   /* ---------------- the drawing as a file ----------------
 
@@ -2594,7 +2594,13 @@
   }
 
   const JSON_TYPES = [{ description: 'Tessera drawing', accept: { 'application/json': ['.json'] } }];
-  const suggestName = () => (fileHandle && fileHandle.name) || `tessera-${stamp()}.json`;
+  /* The name a save should carry. With a handle it is that file's. With
+     none — no picker, so the drawing goes to the downloads folder — Save
+     keeps offering the name it last used, which is as near as a download
+     gets to writing back over something; Save as asks for a fresh one. */
+  let lastName = '';
+  const suggestName = (asNew) => (fileHandle && fileHandle.name)
+    || (!asNew && lastName) || `tessera-${stamp()}.json`;
 
   async function saveProject(asNew) {
     const text = projectJson();
@@ -2603,7 +2609,7 @@
         let handle = asNew ? null : fileHandle;
         if (handle && !(await writable(handle))) handle = null;
         if (!handle) {
-          handle = await window.showSaveFilePicker({ suggestedName: suggestName(), types: JSON_TYPES });
+          handle = await window.showSaveFilePicker({ suggestedName: suggestName(asNew), types: JSON_TYPES });
         }
         const out = await handle.createWritable();
         await out.write(text);
@@ -2618,13 +2624,14 @@
       }
     }
     /* No file picker here — Safari and Firefox have no File System
-       Access API — so the drawing goes to the downloads folder under a
-       name of its own, and Save cannot write back over it. */
-    const name = suggestName();
+       Access API — so the drawing goes to the downloads folder and
+       nothing can be written back over. */
+    const name = suggestName(asNew);
+    lastName = name;
     download(name, new Blob([text], { type: 'application/json' }));
     setDirty(false);
     showFile(name);
-    flash(`Downloaded ${name} — this browser has no file picker`);
+    flash(`Downloaded ${name}`);
     return true;
   }
 
@@ -2682,15 +2689,23 @@
     loadInput.click();
   }
 
-  // Say what the buttons will actually do where there is no picker.
+  /* Where there is no picker the button is not saving, it is
+     downloading, and it should say so rather than promise a file to
+     write back to that this browser cannot give us. */
   if (!window.showSaveFilePicker) {
-    const note = ' · this browser has no file picker, so it goes to your downloads';
-    for (const id of ['saveJson', 'saveJsonAs']) {
-      const b = document.getElementById(id);
-      b.title = b.title.replace(/ — .*$/, '') + note;
-    }
-    const l = document.getElementById('loadJson');
-    l.title = l.title.replace(/ — .*$/, '') + ' · from a file chooser';
+    document.getElementById('loadJson').title =
+      'Open a drawing — ⌘O · from the file chooser';
+    const s1 = document.getElementById('saveJson');
+    s1.textContent = 'Download';
+    s1.title = 'Download the drawing — ⌘S · this browser has no file picker, '
+      + 'so it goes to your downloads under the name it last used';
+    const s2 = document.getElementById('saveJsonAs');
+    s2.textContent = 'Download as';
+    s2.title = 'Download the drawing under a new name — ⇧⌘S · this browser has '
+      + 'no file picker';
+    // The exports drop a file in the same place, so they say the same word.
+    document.getElementById('exportSvg').textContent = 'Download SVG';
+    document.getElementById('exportPng').textContent = 'Download PNG';
   }
 
   document.getElementById('loadJson').addEventListener('click', loadProject);
