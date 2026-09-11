@@ -74,15 +74,16 @@ Click a mark to hold it; **Shift-click** to add another, or to put one back
 down. Holding any member of a group holds the whole group — what is outlined is
 what will move.
 
-**Sweeping an area.** With the select tool up, the two-finger scroll that
-would pan the plane drags the far corner of a box out from wherever the
-pointer is; the count follows as it grows, and everything **wholly inside** it
-is held when your fingers stop. Two fingers on a trackpad cannot move the
-pointer, so for the length of the sweep the real one is hidden and the corner
-you are dragging is drawn in its place. Wholly, not merely touched, so sweeping over a
-figure does not drag in the ground it sits on. `Esc` drops the sweep. The plane
-still pans by dragging empty paper or with a middle/right-drag, and pinch still
-zooms.
+**Sweeping an area.** Press on empty paper and drag: a box follows the
+pointer, the count of what is inside follows with it, and everything **wholly
+inside** is held on release. Wholly, not merely touched, so sweeping over a
+figure does not drag in the ground it sits on. Shift-drag keeps what you were
+already holding and adds to it; `Esc` part-way through drops the sweep and puts
+back what was in hand.
+
+Because a drag now sweeps, the plane is panned with the select tool up by
+two-finger scrolling or a middle/right-drag rather than by dragging the paper.
+Pinch still zooms.
 
 **Group** `⌘G` binds what you are holding into one thing that moves, recolours
 and goes as a unit; **Ungroup** `⇧⌘G` lets it loose. A fill made against
@@ -163,9 +164,9 @@ Opening a drawing, or starting one, is a new session rather than an edit, so
 the **undo history goes** with it: the steps behind it belong to a picture that
 is no longer on the table. Save before you load if the marks matter.
 
-Pan by two-finger scrolling, middle/right-dragging, or dragging empty space
-with the select tool — though with that tool up the two-finger scroll sweeps
-out a selection instead, so pan by dragging the paper.
+Pan by two-finger scrolling or middle/right-dragging. With every tool but
+select, dragging empty space pans too — under the select tool that drag sweeps
+out an area instead.
 
 ## Palette
 
