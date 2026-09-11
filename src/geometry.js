@@ -303,19 +303,34 @@ function loopsFromMask(mask, W, H, eps) {
          sharp corner is left where it is: averaging pulls a point like
          the tip of a wedge inwards, which opens a notch exactly where
          the fill most needs to reach. The ends wrap round, since these
-         rings are closed. */
+         rings are closed.
+
+         The move is capped at the tolerance the ring was simplified at.
+         Averaging with the neighbours is a move of a quarter of the way
+         towards them, which is nothing while they are a cell away — but
+         simplification has just left them a hundred cells away, and
+         there the same quarter takes a corner clean off. A staircase
+         that survived simplification is under a cell out of line, so a
+         cell of movement is all the easing ever needs. */
       const n = simp.length;
+      const cap = eps == null ? 2 : eps;
       const eased = n < 4 ? simp : simp.map((p, i) => {
         const a = simp[(i - 1 + n) % n], b = simp[(i + 1) % n];
         const ux = p.x - a.x, uy = p.y - a.y;
         const vx = b.x - p.x, vy = b.y - p.y;
         const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
         if (lu > 1e-9 && lv > 1e-9) {
-          // cos of the turn; below a half turn's worth is a real corner
+          /* cos of the turn. A corner is anything that turns by more
+             than a shallow bend: a 45° one, which is what every corner
+             of a diagonal figure is, was being treated as a curve. */
           const cos = (ux * vx + uy * vy) / (lu * lv);
-          if (cos < 0.5) return p;
+          if (cos < 0.9) return p;
         }
-        return { x: (a.x + 2 * p.x + b.x) / 4, y: (a.y + 2 * p.y + b.y) / 4 };
+        const tx = (a.x + 2 * p.x + b.x) / 4, ty = (a.y + 2 * p.y + b.y) / 4;
+        const mx = tx - p.x, my = ty - p.y;
+        const m = Math.hypot(mx, my);
+        if (m <= cap) return { x: tx, y: ty };
+        return { x: p.x + (mx * cap) / m, y: p.y + (my * cap) / m };
       });
       return eased.map((p) => ({ x: p.x * scale, y: p.y * scale }));
     })
