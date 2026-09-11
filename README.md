@@ -53,6 +53,14 @@ at an angle leave a notch on the outside of the join. Ends that stop in space
 stay flat, so precision is kept where it matters and corners still look like
 corners.
 
+Ends meet **across the seam** as well as within a square: a mark running past
+its own edge can join another square's copy end to end, and that corner is
+rounded too. Which ends meet there depends only on where a square sits in the
+block, so it is worked out once per block position and kept until the marks
+change. (`Save SVG` writes one definition reused for every square, so it can
+only carry the joins that happen within one — the ones made by the tiling are
+not in it.)
+
 ### Fills and groups
 
 Filling an area does one of two things:
@@ -328,8 +336,13 @@ instanced once per tile with a rotation, over a block-aligned sheet of at least
 
 ### How fill stays vector
 
-The fill rasterises the tile's marks into a scratch grid only to work out
-*which* enclosed area was clicked. It floods from the cursor (eight-connected,
+The fill rasterises the marks into a scratch grid only to work out *which*
+enclosed area was clicked — and it rasterises **everything the eye can see
+holding that area in**, not just the square's own marks. With clipping off a
+mark runs over its neighbours, so the squares around this one lay ink on it as
+well; each is drawn through its own quarter-turn and mapped back into this
+square's frame. Without that, an area enclosed by a neighbour's ink flooded
+straight out, because the flood had never been told about it. It floods from the cursor (eight-connected,
 since the gap where two marks converge is a diagonal channel), bridges the cell
 or two the grid loses where that gap pinches shut, walks the boundary into
 closed loops and simplifies them.

@@ -120,10 +120,72 @@
   // Freehand already ends round, so only the straight tools need this.
   const ROUNDABLE = { line: 1, curve: 1 };
 
+  /* Marks meet across the seam as well as within a square. A mark that
+     runs past its own edge can meet another square's copy end to end,
+     and that corner needs rounding as much as any other — without it the
+     two flat ends leave a wedge of paper on the outside of the bend.
+     Which ends meet depends only on where a square sits in the block, so
+     it is worked out once per block position and kept until the marks
+     change. */
+  let crossJunctions = new Map();     // "a,b" in the block -> local ends
+  let crossFor = null;
+  let tileKey = '0,0';                // block position of the square being painted
+
+  const joined = (p) => {
+    const k = jkey(p);
+    if (junctions.has(k)) return true;
+    const set = crossJunctions.get(tileKey);
+    return !!set && set.has(k);
+  };
+
+  function placeIn(p, i, j) {
+    const r = rotAt(state.pattern, i, j);
+    let dx = p.x - T / 2, dy = p.y - T / 2;
+    for (let k = r; k > 0; k--) { const t = dx; dx = -dy; dy = t; }
+    return { x: dx + T / 2 + i * T, y: dy + T / 2 + j * T };
+  }
+
+  function findCrossJunctions() {
+    const sig = `${state.pattern.n}:${state.pattern.cells.join('')}:${state.clip}`;
+    if (crossFor && crossFor.list === state.shapes && crossFor.sig === sig) return;
+    crossFor = { list: state.shapes, sig };
+    crossJunctions = new Map();
+    // Clipped marks stop at the edge, so nothing of theirs reaches a neighbour.
+    const pad = state.clip ? 0 : Math.min(overhang(state.shapes), 2);
+    const marks = state.shapes.filter((s) => s.layer === 'stroke' && !s.filled && ROUNDABLE[s.kind]);
+    if (!pad || !marks.length) return;
+
+    const n = state.pattern.n;
+    for (let b = 0; b < n; b++) {
+      for (let a = 0; a < n; a++) {
+        const seen = new Map();
+        for (let dj = -pad; dj <= pad; dj++) {
+          for (let di = -pad; di <= pad; di++) {
+            for (const s of marks) {
+              for (const p of endpointsOf(s)) {
+                const k = jkey(placeIn(p, a + di, b + dj));
+                const at = seen.get(k);
+                if (at) at.push([di, dj, p]); else seen.set(k, [[di, dj, p]]);
+              }
+            }
+          }
+        }
+        const set = new Set();
+        for (const list of seen.values()) {
+          if (list.length < 2) continue;
+          // the disc goes where this square's own copy of that end lies
+          for (const [di, dj, p] of list) if (!di && !dj) set.add(jkey(p));
+        }
+        if (set.size) crossJunctions.set(`${a},${b}`, set);
+      }
+    }
+  }
+
   function paintJunctions(g, s, width) {
-    if (!junctions.size || !ROUNDABLE[s.kind] || s.filled) return;
+    if (!ROUNDABLE[s.kind] || s.filled) return;
+    if (!junctions.size && !crossJunctions.size) return;
     for (const p of endpointsOf(s)) {
-      if (!junctions.has(jkey(p))) continue;
+      if (!joined(p)) continue;
       g.beginPath();
       g.arc(p.x, p.y, width / 2, 0, Math.PI * 2);
       g.fill();
@@ -523,6 +585,7 @@
     const offs = state.wrap ? WRAP : ORIGIN;
     const list = paintOrder(drawList());
     junctions = findJunctions(list);
+    findCrossJunctions();
 
     applyView();
 
@@ -533,6 +596,7 @@
     for (let j = R.j0 - pad; j <= R.j1 + pad; j++) {
       for (let i = R.i0 - pad; i <= R.i1 + pad; i++) {
         ctx.save();
+        tileKey = `${mod(i, state.pattern.n)},${mod(j, state.pattern.n)}`;
         ctx.translate(i * T, j * T);
         const r = rotAt(state.pattern, i, j);
         if (r) {
@@ -1548,38 +1612,63 @@
     fctx.lineCap = 'round';
     fctx.lineJoin = 'round';
 
-    // Barriers have to be exactly what is on the tile — including the
-    // wrapped copies when edge wrapping is on, or the fill runs straight
-    // through lines that are plainly visible.
-    // Each mark is laid down in a colour that encodes its index, so one
-    // read gives both the barriers and which mark made each of them.
+    /* Barriers have to be everything the eye can see holding the area
+       in, not only this square's own marks. With clipping off a mark
+       runs over its neighbours, so the squares around this one lay ink
+       on it as well — and an area enclosed by that ink flooded straight
+       out, because the flood had never been told about it. Each
+       neighbour is drawn through its own quarter-turn and mapped back
+       into this square's frame; the wrapped copies come too, when edge
+       wrapping is on.
+       Each mark is laid down in a colour that encodes its index, so one
+       read gives both the barriers and which mark made each of them. */
     const offs = state.wrap ? WRAP : ORIGIN;
+    const home = drawTile || activeTile;
+    const r0 = rotAt(state.pattern, home.i, home.j);
+    const pad = state.clip ? 0 : Math.min(overhang(state.shapes), 2);
+    const places = [];
+    for (let dj = -pad; dj <= pad; dj++) {
+      for (let di = -pad; di <= pad; di++) {
+        places.push([di, dj, rotAt(state.pattern, home.i + di, home.j + dj)]);
+      }
+    }
+
     let barriers = 0;
     let thinnest = Infinity;   // the narrowest wall, in cells
-    for (const o of offs) {
-      if (o[0] || o[1]) fctx.translate(o[0] * T, o[1] * T);
-      state.shapes.forEach((s, idx) => {
-        if (s.layer !== 'stroke') return;
-        const id = idx + 1;
-        const col = `rgb(${id & 255},${(id >> 8) & 255},0)`;
-        fctx.strokeStyle = col;
-        fctx.fillStyle = col;
-        const path = pathOf(s);
-        if (s.filled) fctx.fill(path);
-        else {
-          const [cap, join] = capsOf(s.kind);
-          fctx.lineCap = cap;
-          fctx.lineJoin = join;
-          const w = Math.max(s.width, 2 / k);
-          fctx.lineWidth = w;
-          fctx.stroke(path);
-          paintJunctions(fctx, s, w);
-          if (w * k < thinnest) thinnest = w * k;
-        }
-        barriers++;
-      });
-      if (o[0] || o[1]) fctx.translate(-o[0] * T, -o[1] * T);
+    findCrossJunctions();
+    for (const [di, dj, r] of places) {
+      tileKey = `${mod(home.i + di, state.pattern.n)},${mod(home.j + dj, state.pattern.n)}`;
+      for (const o of offs) {
+        fctx.setTransform(k, 0, 0, k, 0, 0);
+        fctx.translate(T / 2, T / 2);
+        fctx.rotate((-r0 * Math.PI) / 2);
+        fctx.translate(di * T, dj * T);
+        fctx.rotate((r * Math.PI) / 2);
+        fctx.translate(-T / 2, -T / 2);
+        fctx.translate(o[0] * T, o[1] * T);
+        state.shapes.forEach((s, idx) => {
+          if (s.layer !== 'stroke') return;
+          const id = idx + 1;
+          const col = `rgb(${id & 255},${(id >> 8) & 255},0)`;
+          fctx.strokeStyle = col;
+          fctx.fillStyle = col;
+          const path = pathOf(s);
+          if (s.filled) fctx.fill(path);
+          else {
+            const [cap, join] = capsOf(s.kind);
+            fctx.lineCap = cap;
+            fctx.lineJoin = join;
+            const w = Math.max(s.width, 2 / k);
+            fctx.lineWidth = w;
+            fctx.stroke(path);
+            paintJunctions(fctx, s, w);
+            if (w * k < thinnest) thinnest = w * k;
+          }
+          barriers++;
+        });
+      }
     }
+    fctx.setTransform(k, 0, 0, k, 0, 0);
     if (!barriers) return flash('Draw an outline first');
 
     const px = fctx.getImageData(0, 0, R, R).data;
