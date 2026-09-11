@@ -341,15 +341,27 @@ instanced once per tile with a rotation, over a block-aligned sheet of at least
 ### How fill stays vector
 
 The fill rasterises the marks into a scratch grid only to work out *which*
-enclosed area was clicked — and it rasterises **everything the eye can see
-holding that area in**, not just the square's own marks. With clipping off a
-mark runs over its neighbours, so the squares around this one lay ink on it as
-well; each is drawn through its own quarter-turn and mapped back into this
-square's frame. Without that, an area enclosed by a neighbour's ink flooded
-straight out, because the flood had never been told about it. It floods from the cursor (eight-connected,
-since the gap where two marks converge is a diagonal channel), bridges the cell
-or two the grid loses where that gap pinches shut, walks the boundary into
-closed loops and simplifies them.
+enclosed area was clicked. It floods from the cursor (eight-connected, since
+the gap where two marks converge is a diagonal channel), bridges the cell or
+two the grid loses where that gap pinches shut, walks the boundary into closed
+loops and simplifies them.
+
+What goes into the grid is **everything the eye can see holding that area in**,
+not just the square's own marks. With clipping off a mark runs over its
+neighbours, so the squares around this one lay ink on it as well; each is drawn
+through its own quarter-turn and mapped back into this square's frame. Without
+that, an area enclosed by a neighbour's ink flooded straight out, because the
+flood had never been told about it.
+
+**How wide the grid is laid** answers the other half of that. An area held in
+partly by a neighbour's ink runs past the square's edge, and a fill that
+stopped there left a bite out of the shape — so when the flood reaches the edge
+of its grid, the grid is laid again over the square and the ring around it and
+the flood run afresh. Most fills never touch the edge and pay nothing for it.
+Two cases are not areas that continue, and stay on the square: one meeting
+**all four** edges is the ground the marks sit on, and one still running at the
+wider grid was never enclosed at all — a mark the size of the square tiles,
+where one the size of three does not.
 
 How far it may bridge is set by the **thinnest mark in play**. The bridge eats
 into a wall from the inside, and a wall it eats through is no wall: an outline

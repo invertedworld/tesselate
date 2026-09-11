@@ -74,6 +74,7 @@
   const MAX_TILES = 1500;   // caps how far you can zoom out
   const FILL_RES = 700;    // scratch resolution for area detection
   const FILL_GROW = 2;      // ~3 tile units, enough to tuck under a stroke
+  const FILL_MAX = 1400;    // the widest scratch grid, when one square is not enough
   const WRAP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   const ORIGIN = [[0, 0]];
 
@@ -1578,6 +1579,24 @@
   fillCanvas.width = fillCanvas.height = FILL_RES;
   const fctx = fillCanvas.getContext('2d', { willReadFrequently: true });
 
+  // Which edges of its grid does the flooded area run up to?
+  function edgesHit(m, R) {
+    let top = false, bottom = false, left = false, right = false;
+    const last = (R - 1) * R;
+    for (let x = 0; x < R; x++) {
+      if (m[x]) top = true;
+      if (m[last + x]) bottom = true;
+    }
+    for (let y = 0; y < R; y++) {
+      if (m[y * R]) left = true;
+      if (m[y * R + R - 1]) right = true;
+    }
+    return {
+      any: top || bottom || left || right,
+      all: top && bottom && left && right,
+    };
+  }
+
   function recolour(shape) {
     if (shape.color === state.color) return flash('Already that ink');
     const next = Object.assign({}, shape, { color: state.color });
@@ -1615,25 +1634,6 @@
     const onEdge = hitTest(w, { strokesOnly: true, edgeOnly: true });
     if (onEdge) return recolour(onEdge);
 
-    const R = FILL_RES, k = R / T;
-    fctx.setTransform(1, 0, 0, 1, 0, 0);
-    fctx.clearRect(0, 0, R, R);
-    fctx.setTransform(k, 0, 0, k, 0, 0);
-    fctx.fillStyle = '#000';
-    fctx.strokeStyle = '#000';
-    fctx.lineCap = 'round';
-    fctx.lineJoin = 'round';
-
-    /* Barriers have to be everything the eye can see holding the area
-       in, not only this square's own marks. With clipping off a mark
-       runs over its neighbours, so the squares around this one lay ink
-       on it as well — and an area enclosed by that ink flooded straight
-       out, because the flood had never been told about it. Each
-       neighbour is drawn through its own quarter-turn and mapped back
-       into this square's frame; the wrapped copies come too, when edge
-       wrapping is on.
-       Each mark is laid down in a colour that encodes its index, so one
-       read gives both the barriers and which mark made each of them. */
     const offs = state.wrap ? WRAP : ORIGIN;
     const home = drawTile || activeTile;
     const r0 = rotAt(state.pattern, home.i, home.j);
@@ -1644,97 +1644,152 @@
         places.push([di, dj, rotAt(state.pattern, home.i + di, home.j + dj)]);
       }
     }
-
-    let barriers = 0;
-    let thinnest = Infinity;   // the narrowest wall, in cells
     findCrossJunctions();
-    for (const [di, dj, r] of places) {
-      tileKey = `${mod(home.i + di, state.pattern.n)},${mod(home.j + dj, state.pattern.n)}`;
-      for (const o of offs) {
-        fctx.setTransform(k, 0, 0, k, 0, 0);
-        fctx.translate(T / 2, T / 2);
-        fctx.rotate((-r0 * Math.PI) / 2);
-        fctx.translate(di * T, dj * T);
-        fctx.rotate((r * Math.PI) / 2);
-        fctx.translate(-T / 2, -T / 2);
-        fctx.translate(o[0] * T, o[1] * T);
-        state.shapes.forEach((s, idx) => {
-          if (s.layer !== 'stroke') return;
-          const id = idx + 1;
-          const col = `rgb(${id & 255},${(id >> 8) & 255},0)`;
-          fctx.strokeStyle = col;
-          fctx.fillStyle = col;
-          const path = pathOf(s);
-          if (s.filled) fctx.fill(path);
-          else {
-            const [cap, join] = capsOf(s.kind);
-            fctx.lineCap = cap;
-            fctx.lineJoin = join;
-            const w = Math.max(s.width, 2 / k);
-            fctx.lineWidth = w;
-            fctx.stroke(path);
-            paintJunctions(fctx, s, w);
-            if (w * k < thinnest) thinnest = w * k;
-          }
-          barriers++;
-        });
+
+    /* The flood runs on a grid laid over the square. An area held in
+       partly by a neighbour's ink runs past that square's edge, and a
+       fill that stopped there left a bite out of the shape — so when the
+       flood reaches the edge of its grid, the grid is laid again over
+       the square and the ring around it and the flood run afresh. Most
+       fills never touch the edge and pay nothing for it; the ones that
+       do are traced at a slightly coarser cell, which the snap onto the
+       walls afterwards makes good anyway. */
+    let rings = 0;
+    let cropped = false;           // gave up looking for a closed boundary
+    const maxRings = pad ? 1 : 0;  // the square and the ring around it
+    let ox = 0, oy = 0, span = T, R = FILL_RES, k = R / T;
+    let px, barrier, walls, mask, traced, grow, raw, edges;
+
+    for (;;) {
+      ox = -rings * T;
+      oy = -rings * T;
+      span = (1 + 2 * rings) * T;
+      R = Math.min(FILL_MAX, Math.round((FILL_RES * span) / T));
+      k = R / span;
+      // Wrapping makes a torus of one square; a wider grid is not one.
+      const wrapOK = state.wrap && !rings;
+      if (fillCanvas.width !== R) fillCanvas.width = fillCanvas.height = R;
+      fctx.setTransform(1, 0, 0, 1, 0, 0);
+      fctx.clearRect(0, 0, R, R);
+      fctx.lineCap = 'round';
+      fctx.lineJoin = 'round';
+
+      /* Barriers have to be everything the eye can see holding the area
+         in, not only this square's own marks. With clipping off a mark
+         runs over its neighbours, so the squares around this one lay ink
+         on it as well — and an area enclosed by that ink flooded
+         straight out, because the flood had never been told about it.
+         Each neighbour is drawn through its own quarter-turn and mapped
+         back into this square's frame; the wrapped copies come too, when
+         edge wrapping is on.
+         Each mark is laid down in a colour that encodes its index, so
+         one read gives both the barriers and which mark made each. */
+      let barriers = 0;
+      let thinnest = Infinity;   // the narrowest wall, in cells
+      for (const [di, dj, r] of places) {
+        tileKey = `${mod(home.i + di, state.pattern.n)},${mod(home.j + dj, state.pattern.n)}`;
+        for (const o of offs) {
+          fctx.setTransform(k, 0, 0, k, -ox * k, -oy * k);
+          fctx.translate(T / 2, T / 2);
+          fctx.rotate((-r0 * Math.PI) / 2);
+          fctx.translate(di * T, dj * T);
+          fctx.rotate((r * Math.PI) / 2);
+          fctx.translate(-T / 2, -T / 2);
+          fctx.translate(o[0] * T, o[1] * T);
+          state.shapes.forEach((sh, idx) => {
+            if (sh.layer !== 'stroke') return;
+            const id = idx + 1;
+            const col = `rgb(${id & 255},${(id >> 8) & 255},0)`;
+            fctx.strokeStyle = col;
+            fctx.fillStyle = col;
+            const path = pathOf(sh);
+            if (sh.filled) fctx.fill(path);
+            else {
+              const [cap, join] = capsOf(sh.kind);
+              fctx.lineCap = cap;
+              fctx.lineJoin = join;
+              const pen = Math.max(sh.width, 2 / k);
+              fctx.lineWidth = pen;
+              fctx.stroke(path);
+              paintJunctions(fctx, sh, pen);
+              if (pen * k < thinnest) thinnest = pen * k;
+            }
+            barriers++;
+          });
+        }
       }
+      if (!barriers) return flash('Draw an outline first');
+
+      px = fctx.getImageData(0, 0, R, R).data;
+      barrier = new Uint8Array(R * R);
+      // Half covered counts as wall. A fainter threshold let the soft
+      // edges of two converging strokes seal the gap between them long
+      // before they actually met, so a narrow wedge stopped filling well
+      // short of its point.
+      for (let i = 0, n = R * R; i < n; i++) barrier[i] = px[i * 4 + 3] >= 128 ? 1 : 0;
+
+      const seed = {
+        x: clamp(Math.round((w.x - ox) * k), 0, R - 1),
+        y: clamp(Math.round((w.y - oy) * k), 0, R - 1),
+      };
+      raw = floodMask(barrier, R, R, seed.x, seed.y, wrapOK);
+      if (!raw) return flash('No open area under the cursor');
+
+      /* Still running when it met the edge of the grid? Then the area
+         goes on into the next square and the grid was too small. Two
+         things are not that: an area meeting all four edges is the
+         ground the marks sit on, and the ground is a square; and an area
+         still running at the widest grid was never enclosed at all, so
+         it is traced over the square again — a mark the size of the
+         square tiles, where one the size of three does not. */
+      edges = edgesHit(raw, R);
+      if (!cropped && edges.any && !edges.all) {
+        if (rings < maxRings) { rings++; continue; }
+        if (rings) { rings = 0; cropped = true; continue; }
+      }
+
+      /* Which marks did the area come up against? Read from a little way
+         outside it: only a stroke's fully opaque core carries a
+         trustworthy index, because the canvas stores colour premultiplied
+         by alpha and along a soft edge a small index like 3 comes back as
+         2, naming an entirely different mark. */
+      const near = dilate(raw, R, R, 6, wrapOK);
+      const bounding = new Set();
+      for (let i = 0, n = R * R; i < n; i++) {
+        if (!near[i] || px[i * 4 + 3] !== 255) continue;
+        const id = px[i * 4] | (px[i * 4 + 1] << 8);
+        if (id >= 1 && id <= state.shapes.length) bounding.add(id - 1);
+      }
+      walls = [...bounding].map((i) => state.shapes[i]).filter(Boolean);
+
+      /* How far the flood may be grown — for the bridge, and for the
+         tuck at the end — is set by the thinnest wall in play. Both eat
+         into a wall from the inside, and neither may eat one through: a
+         mark two cells wide on the scratch grid can spare none, so a
+         thin outline gets no bridging at all. A fill that stops a hair
+         short of a pinch is a great deal better than one that escapes
+         the shape entirely, which is what a 5-unit outline used to let
+         it do. */
+      grow = clamp(Math.floor((thinnest - 1) / 2), 0, FILL_GROW);
+
+      /* Where two marks converge, the passage between them narrows below
+         one cell of the grid long before the marks themselves meet, and
+         the flood gives up there — leaving a pocket of unfilled paper
+         past the pinch. Growing the area bridges that pinch, so flooding
+         a second time through the bridge picks the pocket up. */
+      const bridged = dilate(raw, R, R, grow, wrapOK);
+      const pinched = new Uint8Array(R * R);
+      for (let i = 0, n = R * R; i < n; i++) pinched[i] = barrier[i] && !bridged[i] ? 1 : 0;
+      const filled = floodMask(pinched, R, R, seed.x, seed.y, wrapOK) || raw;
+      mask = dilate(filled, R, R, grow, wrapOK);
+      break;
     }
-    fctx.setTransform(k, 0, 0, k, 0, 0);
-    if (!barriers) return flash('Draw an outline first');
 
-    const px = fctx.getImageData(0, 0, R, R).data;
-    const barrier = new Uint8Array(R * R);
-    // Half covered counts as wall. A fainter threshold let the soft
-    // edges of two converging strokes seal the gap between them long
-    // before they actually met, so a narrow wedge stopped filling well
-    // short of its point.
-    for (let i = 0, n = R * R; i < n; i++) barrier[i] = px[i * 4 + 3] >= 128 ? 1 : 0;
-
-    const seed = {
-      x: clamp(Math.round(w.x * k), 0, R - 1),
-      y: clamp(Math.round(w.y * k), 0, R - 1),
-    };
-    const raw = floodMask(barrier, R, R, seed.x, seed.y, state.wrap);
-    if (!raw) return flash('No open area under the cursor');
-
-    /* Which marks did the area come up against? Read from a little way
-       outside it: only a stroke's fully opaque core carries a
-       trustworthy index, because the canvas stores colour premultiplied
-       by alpha and along a soft edge a small index like 3 comes back as
-       2, naming an entirely different mark. */
-    const reach = dilate(raw, R, R, 6, state.wrap);
-    const bounding = new Set();
-    for (let i = 0, n = R * R; i < n; i++) {
-      if (!reach[i] || px[i * 4 + 3] !== 255) continue;
-      const id = px[i * 4] | (px[i * 4 + 1] << 8);
-      if (id >= 1 && id <= state.shapes.length) bounding.add(id - 1);
-    }
-    const walls = [...bounding].map((i) => state.shapes[i]).filter(Boolean);
-
-    /* How far the flood may be grown — for the bridge, and for the tuck
-       at the end — is set by the thinnest wall in play. Both eat into a
-       wall from the inside, and neither may eat one through: a mark two
-       cells wide on the scratch grid can spare none, so a thin outline
-       gets no bridging at all. A fill that stops a hair short of a pinch
-       is a great deal better than one that escapes the shape entirely,
-       which is what a 5-unit outline used to let it do. */
-    const grow = clamp(Math.floor((thinnest - 1) / 2), 0, FILL_GROW);
-
-    /* Where two marks converge, the passage between them narrows below
-       one cell of the grid long before the marks themselves meet, and
-       the flood gives up there — leaving a pocket of unfilled paper past
-       the pinch. Growing the area bridges that pinch, so flooding a
-       second time through the bridge picks the pocket up. Real ink is
-       thicker than the bridge, so nothing escapes through it. */
-    const bridged = dilate(raw, R, R, grow, state.wrap);
-    const pinched = new Uint8Array(R * R);
-    for (let i = 0, n = R * R; i < n; i++) pinched[i] = barrier[i] && !bridged[i] ? 1 : 0;
-    const filled = floodMask(pinched, R, R, seed.x, seed.y, state.wrap) || raw;
-    const mask = dilate(filled, R, R, grow, state.wrap);
-
-    const traced = loopsFromMask(mask, R, R, 1);
-    if (!traced) return flash('No open area under the cursor');
+    const cells = loopsFromMask(mask, R, R, 1);
+    if (!cells) return flash('No open area under the cursor');
+    // Cell coordinates back into the square's own, wherever the grid sat.
+    const scale = span / T;
+    traced = cells.map((l) => l.map((p) => ({ x: p.x * scale + ox, y: p.y * scale + oy })));
     // The grid can only place an edge to the nearest cell. Move each
     // point onto the true edge of the mark it belongs to, a hair inside
     // so it tucks under rather than meeting it exactly.
@@ -1754,7 +1809,7 @@
         if (p.y > y1) y1 = p.y;
       }
       const m = 8;
-      return x1 >= -m && x0 <= T + m && y1 >= -m && y0 <= T + m;
+      return x1 >= ox - m && x0 <= ox + span + m && y1 >= oy - m && y0 <= oy + span + m;
     });
     if (!near.length) return flash('No open area under the cursor');
     const region = { kind: 'region', loops: near };
@@ -1777,17 +1832,9 @@
 
     // An area that reaches all four edges is the ground the marks sit
     // on, not the inside of any of them; grouping it would tie the whole
-    // picture together.
-    let top = false, bottom = false, left = false, right = false;
-    for (let x = 0; x < R; x++) {
-      if (raw[x]) top = true;
-      if (raw[(R - 1) * R + x]) bottom = true;
-    }
-    for (let y = 0; y < R; y++) {
-      if (raw[y * R]) left = true;
-      if (raw[y * R + R - 1]) right = true;
-    }
-    const isGround = top && bottom && left && right;
+    // picture together. An area that had to be traced over more than one
+    // square is by definition not it.
+    const isGround = !rings && edges.all;
 
     if (walls.length && !isGround) {
       /* Every fill makes its own group, out of the marks around it that
