@@ -35,7 +35,7 @@ mark — it stays live and follows the cursor until the second click, and
 
 | Tool | |
 |---|---|
-| **Select** `Space` | Click a mark to pick it up, drag to move it. Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
+| **Select** `Space` | Click a mark to pick it up, drag to move it. **Shift-click** adds another to what you are holding, or puts it back down; a **two-finger sweep** takes everything in an area (see below). Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
 | **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Held drag only, and it ignores the grid entirely |
 | **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. Hold `Shift` to hold it horizontal, vertical or to 45°; with a lattice up the length is quantised along that direction too |
 | **Arc** `A` | Two clicks for the ends, then move to bend it and click to set. Hold `Shift` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
@@ -68,7 +68,27 @@ With *Wrap at edges* on the tile is a torus, and the fill wraps with it: a
 shape straddling the seam is one area and fills in a single click, on both
 sides.
 
-### With something selected
+### Picking things up
+
+Click a mark to hold it; **Shift-click** to add another, or to put one back
+down. Holding any member of a group holds the whole group — what is outlined is
+what will move.
+
+**Sweeping an area.** With the select tool up, the two-finger scroll that
+would pan the plane drags the far corner of a box out from wherever the
+pointer is; the count follows as it grows, and everything **wholly inside** it
+is held when your fingers stop. Wholly, not merely touched, so sweeping over a
+figure does not drag in the ground it sits on. `Esc` drops the sweep. The plane
+still pans by dragging empty paper or with a middle/right-drag, and pinch still
+zooms.
+
+**Group** `⌘G` binds what you are holding into one thing that moves, recolours
+and goes as a unit; **Ungroup** `⇧⌘G` lets it loose. A fill made against
+several marks is grouped with them already — this is the same binding, by hand.
+The two buttons under the tools say when they apply: Group wants two separate
+things in hand, Ungroup wants something bound.
+
+### With something in hand
 
 The palette recolours it, arrow keys nudge it (`Shift` for a bigger step,
 one lattice cell at a time when snapping is on), `Delete` removes it and
@@ -89,7 +109,8 @@ to carry across the seam.
 *Solid shapes* fills circles and rectangles instead of outlining them.
 
 Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
-undo/redo `⌘Z` / `⇧⌘Z` · recentre `H` · tile rules `G` · clip `K` ·
+undo/redo `⌘Z` / `⇧⌘Z` · group `⌘G` / `⇧⌘G` · recentre `H` ·
+tile rules `G` · clip `K` ·
 wrap `W` · snap `S` · subdivide `D`
 
 ### Off the table
@@ -141,7 +162,8 @@ the **undo history goes** with it: the steps behind it belong to a picture that
 is no longer on the table. Save before you load if the marks matter.
 
 Pan by two-finger scrolling, middle/right-dragging, or dragging empty space
-with the select tool.
+with the select tool — though with that tool up the two-finger scroll sweeps
+out a selection instead, so pan by dragging the paper.
 
 ## Palette
 

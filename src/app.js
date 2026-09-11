@@ -144,7 +144,7 @@
 
   const HINTS = {
     base: 'Draw in any square · two-finger scroll to pan · pinch to zoom',
-    select: 'Select — click a mark to pick it up, drag to move it',
+    select: 'Select — click to pick up, Shift-click to add · two-finger sweep takes an area',
     pencil: 'Pencil — draw freely inside the frame',
     line: 'Line — click each point in turn; Esc finishes · Shift holds it square or to 45°',
     curve: 'Arc — click the two ends, then click to set the bend',
@@ -188,7 +188,8 @@
   let panFrom = null;
   let pinchFrom = null;
   let anchor = null;        // the corner a rectangle is being drawn from
-  let selected = null;      // shape picked with the select tool
+  let picked = [];          // the marks the select tool is holding
+  let lasso = null;         // the area being swept out with two fingers
   let moving = null;        // { index, preview, from, base } while dragging one
   let shiftHeld = false;
   let altHeld = false;
@@ -548,7 +549,8 @@
     if (state.grid) drawRules(R);
     if (state.sub > 1) drawSubGrid(R.step);
     drawFrame();
-    if (selected) drawSelection();
+    if (picked.length) drawSelection();
+    if (lasso) drawLasso();
     if (hoverSnap) drawSnapMark();
     zoomEl.textContent = Math.round(scale * 100) + '%';
   }
@@ -627,7 +629,7 @@
 
   // A halo around the picked mark, plus a dashed box, on the home tile.
   function drawSelection() {
-    const shapes = moving ? moving.previews : groupOf(selected);
+    const shapes = moving ? moving.previews : heldMarks();
     if (!shapes.length) return;
     for (const shape of shapes) drawOneSelection(shape);
   }
@@ -819,7 +821,7 @@
 
   function undo() {
     cancelDraft();
-    selected = null;
+    select([]);
     if (!undoStack.length) return flash('Nothing to undo');
     redoStack.push(state.shapes.slice());
     state.shapes = undoStack.pop();
@@ -828,7 +830,7 @@
 
   function redo() {
     cancelDraft();
-    selected = null;
+    select([]);
     if (!redoStack.length) return flash('Nothing to redo');
     undoStack.push(state.shapes.slice());
     state.shapes = redoStack.pop();
@@ -840,6 +842,7 @@
     document.getElementById('shapeCount').textContent =
       state.shapes.length + (state.shapes.length === 1 ? ' shape' : ' shapes');
     document.getElementById('undo').disabled = !undoStack.length;
+    syncGroupButtons();
     document.getElementById('redo').disabled = !redoStack.length;
     if (!state.shapes.length) closeNewPrompt();
     setDirty(true);
@@ -877,11 +880,21 @@
     switch (state.tool) {
       case 'select': {
         drawTile = activeTile;
+        endLasso(true);
         const hit = hitTest(w, { interior: true });
-        selected = hit;
+        if (!hit) { select([]); requestDraw(); return false; }
+        // Shift adds a mark to what is held, or puts it back down.
+        if (e && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+          const unit = new Set(groupOf(hit));
+          const had = picked.some((sh) => unit.has(sh));
+          select(had ? picked.filter((sh) => !unit.has(sh)) : picked.concat([hit]));
+          requestDraw();
+          return true;     // a pick, not the start of a move
+        }
+        // Pressing on something already held moves the whole armful.
+        if (!heldMarks().includes(hit)) select([hit]);
         requestDraw();
-        if (!hit) return false;
-        const members = groupOf(hit);
+        const members = heldMarks();
         moving = { members, previews: members, base: hit, from: w, dx: 0, dy: 0 };
         return true;
       }
@@ -1118,7 +1131,7 @@
       if (m.dx || m.dy) {
         const swap = new Map(m.members.map((sh, k) => [sh, m.previews[k]]));
         replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), m.previews));
-        selected = swap.get(m.base) || null;
+        select(picked.map((sh) => swap.get(sh) || sh));
       }
       requestDraw();
       return;
@@ -1169,6 +1182,70 @@
   const groupOf = (shape) => (shape && shape.group
     ? state.shapes.filter((s) => s.group === shape.group)
     : shape ? [shape] : []);
+
+  /* Holding one member of a group holds the group: what is outlined is
+     what will move, recolour or go. */
+  function heldMarks() {
+    const out = [], seen = new Set();
+    for (const sh of picked) {
+      for (const m of groupOf(sh)) if (!seen.has(m)) { seen.add(m); out.push(m); }
+    }
+    return out;
+  }
+
+  function select(list) {
+    picked = (list || []).filter(Boolean);
+    syncGroupButtons();
+  }
+
+  function syncGroupButtons() {
+    const g = document.getElementById('groupBtn');
+    const u = document.getElementById('ungroupBtn');
+    if (!g || !u) return;
+    const marks = heldMarks();
+    // Two things to bind means two units, not two marks: a group is one.
+    const units = new Set(marks.map((sh) => sh.group || sh));
+    g.disabled = units.size < 2;
+    u.disabled = !marks.some((sh) => sh.group);
+  }
+
+  /* Binding marks together. A group moves, recolours and goes as one
+     thing; a fill made against several marks is grouped with them
+     automatically, and these two do the same by hand. */
+  function groupPicked() {
+    const marks = heldMarks();
+    const units = new Set(marks.map((sh) => sh.group || sh));
+    if (units.size < 2) return flash('Hold two things — Shift-click to add to what you have');
+    const gid = groupSeq++;
+    const set = new Set(marks);
+    const swap = new Map();
+    const next = state.shapes.map((sh) => {
+      if (!set.has(sh)) return sh;
+      const copy = Object.assign({}, sh, { group: gid });
+      swap.set(sh, copy);
+      return copy;
+    });
+    replaceShapes(next);
+    select(picked.map((sh) => swap.get(sh) || sh));
+    flash(`${marks.length} marks grouped`);
+  }
+
+  function ungroupPicked() {
+    const marks = heldMarks().filter((sh) => sh.group);
+    if (!marks.length) return flash('Nothing grouped in what you are holding');
+    const set = new Set(marks);
+    const swap = new Map();
+    const next = state.shapes.map((sh) => {
+      if (!set.has(sh)) return sh;
+      const copy = Object.assign({}, sh);
+      delete copy.group;
+      swap.set(sh, copy);
+      return copy;
+    });
+    replaceShapes(next);
+    select(picked.map((sh) => swap.get(sh) || sh));
+    flash(`${marks.length} marks let loose`);
+  }
 
   /* Topmost mark under the point. Outlines are tested first so a line
      lying across a filled area still wins. `interior` adds a final
@@ -1227,7 +1304,7 @@
     if (shape.color === state.color) return flash('Already that ink');
     const next = Object.assign({}, shape, { color: state.color });
     replaceShapes(state.shapes.map((sh) => (sh === shape ? next : sh)));
-    if (selected === shape) selected = next;
+    select(picked.map((sh) => (sh === shape ? next : sh)));
     flash('Mark recoloured');
   }
 
@@ -1357,7 +1434,7 @@
       if (host.fillColor === state.color) return flash('Already that ink');
       const next = Object.assign({}, host, { fillColor: state.color });
       replaceShapes(state.shapes.map((sh) => (sh === host ? next : sh)));
-      if (selected === host) selected = next;
+      select(picked.map((sh) => (sh === host ? next : sh)));
       return flash('Filled — border and interior are one mark');
     }
 
@@ -1405,7 +1482,7 @@
       undoStack.push(state.shapes.slice());
       redoStack.length = 0;
       state.shapes = next.concat([region]);
-      selected = null;
+      select([]);
       afterChange();
       const n = free.length || walls.length;
       return flash(n > 1
@@ -1519,15 +1596,97 @@
   canvas.addEventListener('pointercancel', release);
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  /* Sweeping an area with two fingers. With the select tool up, the
+     two-finger scroll that would pan the plane drags the far corner of
+     a box out from where the pointer is instead; everything that ends
+     up wholly inside it is picked up when the fingers stop. The corner
+     follows the fingers, the same way the paper does when panning. */
+  function sweepLasso(s, dx, dy) {
+    if (!lasso) lasso = { a: { x: s.x, y: s.y }, b: { x: s.x, y: s.y }, timer: 0 };
+    lasso.b.x -= dx;
+    lasso.b.y -= dy;
+    clearTimeout(lasso.timer);
+    lasso.timer = setTimeout(() => endLasso(), 180);
+    // Pick up as the box grows, so the sweep shows what it is taking
+    // rather than only telling you once it has stopped.
+    select(caughtBy(lassoBox()));
+    setHint(picked.length
+      ? `Sweeping — ${picked.length} ${picked.length === 1 ? 'mark' : 'marks'} inside`
+      : 'Sweeping an area — anything wholly inside it is picked up', true);
+    requestDraw();
+  }
+
+  function caughtBy(box) {
+    return box ? state.shapes.filter((sh) => holds(box, shapeBBox(sh))) : [];
+  }
+
+  function lassoBox() {
+    if (!lasso) return null;
+    const a = drawPt(lasso.a.x, lasso.a.y);
+    const b = drawPt(lasso.b.x, lasso.b.y);
+    const box = {
+      x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y),
+      x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y),
+    };
+    const least = 6 / state.view.scale;
+    return box.x1 - box.x0 > least && box.y1 - box.y0 > least ? box : null;
+  }
+
+  // Wholly inside, not merely touched: sweeping over a figure should not
+  // drag in the ground it is sitting on.
+  function holds(box, b) {
+    return !!b && b.x0 >= box.x0 && b.y0 >= box.y0 && b.x1 <= box.x1 && b.y1 <= box.y1;
+  }
+
+  function endLasso(drop) {
+    if (!lasso) return false;
+    clearTimeout(lasso.timer);
+    const box = drop ? null : lassoBox();
+    lasso = null;
+    if (drop) select([]);
+    if (box) {
+      const caught = caughtBy(box);
+      select(caught);
+      flash(caught.length
+        ? `${caught.length} ${caught.length === 1 ? 'mark' : 'marks'} picked up`
+        : 'Nothing wholly inside that area');
+    }
+    requestDraw();
+    return true;
+  }
+
+  function drawLasso() {
+    const box = lassoBox();
+    if (!box) return;
+    const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]
+      .map(([x, y]) => { const q = fromTileSpace({ x, y }); return w2s(q.x, q.y); });
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(207, 67, 38, 0.07)';
+    ctx.fill();
+    ctx.strokeStyle = ACCENT;
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   /* trackpad: pinch arrives as a ctrl-flagged wheel, two-finger
      scroll as a plain one */
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     const s = screenPt(e);
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? ch : 1;
     if (e.ctrlKey || e.metaKey) {
+      endLasso(true);
       zoomAt(s.x, s.y, Math.exp(-e.deltaY * 0.01));
+    } else if (state.tool === 'select' && !moving && !pending && !draft) {
+      sweepLasso(s, e.deltaX * k, e.deltaY * k);
     } else {
-      const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? ch : 1;
       state.view.x -= e.deltaX * k;
       state.view.y -= e.deltaY * k;
       requestDraw();
@@ -1590,26 +1749,26 @@
     if (meta && k === 'y') { e.preventDefault(); redo(); return; }
     if (meta && k === 's') { e.preventDefault(); saveProject(e.shiftKey); return; }
     if (meta && k === 'o') { e.preventDefault(); loadProject(); return; }
+    if (meta && k === 'g') { e.preventDefault(); e.shiftKey ? ungroupPicked() : groupPicked(); return; }
     if (meta) return;
 
-    if (selected && !draft && !pending) {
+    if (picked.length && !draft && !pending) {
       const far = e.shiftKey ? 5 : 1;
       const step = (snapping() ? T / effSub() : 10) * far;
       const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
       if (d) {
         e.preventDefault();
-        const members = groupOf(selected);
+        const members = heldMarks();
         const moved = moveGroup(members, d[0] * step, d[1] * step);
         const swap = new Map(members.map((sh, k) => [sh, moved[k]]));
-        const was = selected;
         replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), moved));
-        selected = swap.get(was) || null;
+        select(picked.map((sh) => swap.get(sh) || sh));
         return;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        const gone = new Set(groupOf(selected));
-        selected = null;
+        const gone = new Set(heldMarks());
+        select([]);
         replaceShapes(state.shapes.filter((sh) => !gone.has(sh)));
         flash(gone.size > 1 ? `${gone.size} marks deleted` : 'Mark deleted');
         return;
@@ -1618,7 +1777,8 @@
     if (e.key === 'Shift') { shiftHeld = true; return; }
     if (e.key === 'Alt') { altHeld = true; noteHover(lastWorld); return; }
     if (e.key === 'Escape') {
-      if (!cancelDraft() && selected) { selected = null; requestDraw(); }
+      if (endLasso(true)) { requestDraw(); return; }
+      if (!cancelDraft() && picked.length) { select([]); requestDraw(); }
       return;
     }
     if (TOOL_KEYS[k]) { setTool(TOOL_KEYS[k]); return; }
@@ -1663,7 +1823,8 @@
 
   function setTool(tool) {
     if (pending) cancelDraft();
-    if (tool !== 'select') selected = null;
+    if (tool !== 'select') select([]);
+    endLasso(true);
     state.tool = tool;
     canvas.classList.toggle('selecting', tool === 'select');
     canvas.classList.remove('grabbable');
@@ -1678,10 +1839,13 @@
     state.color = hex;
     for (const b of document.querySelectorAll('.swatch')) b.classList.toggle('on', b.dataset.color === hex);
     syncMixer(quiet);
-    if (selected && selected.color !== hex) {
-      const next = Object.assign({}, selected, { color: hex });
-      replaceShapes(state.shapes.map((sh) => (sh === selected ? next : sh)));
-      selected = next;
+    if (picked.length) {
+      const swap = new Map();
+      for (const sh of picked) if (sh.color !== hex) swap.set(sh, Object.assign({}, sh, { color: hex }));
+      if (swap.size) {
+        replaceShapes(state.shapes.map((sh) => swap.get(sh) || sh));
+        select(picked.map((sh) => swap.get(sh) || sh));
+      }
     }
     saveSoon();
   }
@@ -1777,6 +1941,9 @@
     const b = e.target.closest('.tool');
     if (b) setTool(b.dataset.tool);
   });
+
+  document.getElementById('groupBtn').addEventListener('click', groupPicked);
+  document.getElementById('ungroupBtn').addEventListener('click', ungroupPicked);
 
   /* ---------------- palette ---------------- */
 
@@ -2092,7 +2259,7 @@
 
   newBtn.addEventListener('click', () => {
     const dropped = cancelDraft();
-    selected = null;
+    select([]);
     requestDraw();
     // Nothing on the table is nothing to save; just let go of the file.
     if (!state.shapes.length) {
@@ -2263,7 +2430,7 @@
     syncToggles();
 
     cancelDraft();
-    selected = null;
+    select([]);
     adoptIds(marks);
     adoptShapes(marks);
     setDirty(false);

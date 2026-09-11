@@ -192,6 +192,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .grid3 .wide { justify-content: center; text-align: center; padding: 8px 4px; }
 .exports { margin-top: 12px; }   /* the drawing's own file, then what comes off it */
+.binders { margin-top: 8px; }
+.wide:disabled { opacity: 0.32; cursor: default; }
+.wide:disabled:hover { background: transparent; }
 
 /* The file the drawing belongs to, with a dot while it has moved on. */
 .filename {
