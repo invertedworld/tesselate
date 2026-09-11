@@ -2058,9 +2058,10 @@
 
   document.getElementById('undo').addEventListener('click', undo);
   document.getElementById('redo').addEventListener('click', redo);
-  /* Starting again asks first, in the rail — a browser box would take
-     the focus away from the drawing and looks nothing like the rest.
-     A new drawing belongs to no file, so the handle goes with it. */
+  /* Starting again offers to save what is on the table first, in the
+     rail — a browser box would take the focus away from the drawing and
+     looks nothing like the rest. A new drawing belongs to no file, so
+     the handle goes with it. */
   const newBtn = document.getElementById('newDrawing');
   const newPrompt = document.getElementById('newConfirm');
 
@@ -2071,30 +2072,35 @@
     return true;
   }
 
-  function startNew() {
+  function startNew(quiet) {
     closeNewPrompt();
     if (state.shapes.length) replaceShapes([]);
     setFile(null, '');
     setDirty(false);
-    flash('New drawing — ⌘Z brings the marks back');
+    if (!quiet) flash('New drawing — ⌘Z brings the marks back');
   }
 
   newBtn.addEventListener('click', () => {
     const dropped = cancelDraft();
     selected = null;
     requestDraw();
+    // Nothing on the table is nothing to save; just let go of the file.
     if (!state.shapes.length) {
       if (fileHandle || fileNameEl.textContent) return startNew();
       return flash(dropped ? 'Unfinished mark dropped' : 'The tile is already empty');
     }
-    const n = state.shapes.length;
-    document.getElementById('newCount').textContent = `(${n} ${n === 1 ? 'mark' : 'marks'})`;
     newPrompt.hidden = false;
     newBtn.classList.add('armed');   // it stays put: hiding it would reflow the row
-    document.getElementById('newNo').focus();
+    document.getElementById('newYes').focus();
   });
-  document.getElementById('newNo').addEventListener('click', closeNewPrompt);
-  document.getElementById('newYes').addEventListener('click', startNew);
+
+  document.getElementById('newYes').addEventListener('click', async () => {
+    // Only start over once the drawing is safely down. Backing out of
+    // the file picker leaves the table exactly as it was.
+    if (await saveProject(false)) startNew(true);
+  });
+  document.getElementById('newNo').addEventListener('click', () => startNew());
+  document.getElementById('newCancel').addEventListener('click', closeNewPrompt);
 
   function download(name, blob) {
     const url = URL.createObjectURL(blob);
@@ -2215,16 +2221,18 @@
         setDirty(false);
         setFile(handle, handle.name);
         flash(`Saved ${handle.name}`);
+        return true;
       } catch (err) {
         if (err && err.name !== 'AbortError') flash('That file could not be written');
+        return false;   // backed out of the picker, or the write failed
       }
-      return;
     }
     const name = suggestName();
     download(name, new Blob([text], { type: 'application/json' }));
     setDirty(false);
     showFile(name);
     flash(`Saved ${name}`);
+    return true;
   }
 
   function openProject(text, name, handle) {

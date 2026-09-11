@@ -189,6 +189,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .grid2 .wide { justify-content: center; text-align: center; }
 .grid2 .span2 { grid-column: 1 / -1; }
 .grid2 + .grid2, .filename + .grid2, .confirm + .grid2 { margin-top: 6px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.grid3 .wide { justify-content: center; text-align: center; padding: 8px 4px; }
 .exports { margin-top: 12px; }   /* the drawing's own file, then what comes off it */
 
 /* The file the drawing belongs to, with a dot while it has moved on. */

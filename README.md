@@ -89,7 +89,7 @@ wrap `W` · snap `S` · subdivide `D`
 
 | | |
 |---|---|
-| **New** | Empties the tile and lets go of whatever file the drawing came from. It asks first — in the rail, not in a browser box — and `⌘Z` brings the marks back even after that |
+| **New** | Empties the tile and lets go of whatever file the drawing came from. With marks on the table it asks *Do you want to save your changes?* first — in the rail, not in a browser box. **Yes** saves and then starts over, and backing out of the file picker leaves everything as it was; **No** starts over anyway; **Cancel** or `Esc` goes back. `⌘Z` brings the marks back either way |
 | **Load** `⌘O` / **Save** `⌘S` / **Save as** `⇧⌘S` | The drawing as a `.json` file — see below |
 | **Save SVG** | The pattern as vector paths, several whole blocks of it, with the alignment grid and crop marks left off |
 | **Save PNG** | The same frame you are looking at, marks only, on a clear ground |
