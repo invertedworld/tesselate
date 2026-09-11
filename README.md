@@ -213,12 +213,18 @@ fifteen colours each — and you can keep as many of your own as you like.
 
 Under the swatches is the mixer: a **hex field** that takes any of `#rrggbb`,
 `#rgb`, `#rrggbbaa` or `#rgba`, with or without the `#`; a half-filled circle
-that opens the system colour picker; and an **eyedropper** `I` that takes a
-colour off the drawing itself — arm it and the next click anywhere on the plane
-picks up what is under it, `Esc` to put it down. It reads the canvas rather
-than the screen, because the paper grain lies over the window on a multiply
-blend and anything sampled through it would come back tinted and grainy rather
-than the colour that is actually in the drawing. **Alpha** sets how far through the ink
+that opens the system colour picker; and **Pick** `I`, an eyedropper — arm it
+and the next click anywhere on the plane takes the colour under the pointer,
+`Esc` to put it down.
+
+It asks the **mark**, and the canvas only where there is no mark. A stroke two
+units wide is half soft edge, and a pixel read off that edge is the mark's
+colour mixed with whatever is behind it, never the colour the mark is drawn in.
+Click a border and you get the border's colour, the inside of a closed mark and
+you get its interior's, a filled area and you get the fill's; click bare paper
+and it reads the canvas — which is not the screen, because the paper grain lies
+over the window on a multiply blend and anything sampled through it would come
+back tinted and grainy. **Alpha** sets how far through the ink
 you can see; a colour keeps its short form while it is solid and gains the
 extra two digits the moment it is not, so the swatch and the field always
 agree. Translucent ink is real ink: it fills, strokes, exports and layers like

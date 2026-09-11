@@ -2014,7 +2014,7 @@
     const w = drawPt(s.x, s.y);
 
     const panGesture = e.button === 1 || e.button === 2;
-    if (dropper && !panGesture) { pickFrom(s); return; }
+    if (dropper && !panGesture) { pickFrom(s, w); return; }
 
     // A mark waiting on its next click is set wherever that click lands,
     // including in another square.
@@ -2338,15 +2338,29 @@
     else setHint(HINTS[state.tool] || HINTS.base);
   }
 
-  function pickFrom(s) {
+  /* Ask the mark first, and the canvas only if there is no mark. A
+     stroke two units wide is half soft edge, and a pixel read off that
+     edge is the mark's colour mixed with whatever is behind it — never
+     the colour the mark is actually drawn in, which is the one being
+     asked for. */
+  function pickFrom(s, w) {
+    armDropper(false);
+    const border = hitTest(w, { strokesOnly: true, edgeOnly: true, anyTile: true });
+    const mark = border || hitTest(w, { interior: true, anyTile: true });
+    if (mark) {
+      const hex = !border && mark.layer === 'stroke' && !mark.filled && mark.fillColor
+        ? mark.fillColor
+        : mark.color;
+      setColor(hex);
+      return flash(`Took ${hex}`);
+    }
     const x = clamp(Math.round(s.x * dpr), 0, canvas.width - 1);
     const y = clamp(Math.round(s.y * dpr), 0, canvas.height - 1);
     const px = ctx.getImageData(x, y, 1, 1).data;
-    armDropper(false);
     if (px[3] < 8) return flash('Nothing there to take');
     const hex = '#' + [px[0], px[1], px[2]].map((v) => v.toString(16).padStart(2, '0')).join('');
     setColor(hex);
-    flash(`Took ${hex}`);
+    flash(`Took ${hex} off the paper`);
   }
 
   function setWidth(v) {

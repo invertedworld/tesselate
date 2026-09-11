@@ -124,16 +124,11 @@
     <div class="mixer">
       <span class="swatch-preview"><span class="well chk"><i id="mixInk"></i></span></span>
       <input type="text" id="hexInput" class="mono hex" spellcheck="false" autocomplete="off" maxlength="9" aria-label="Hex colour" placeholder="#rrggbbaa">
-      <label class="pick" title="Pick a colour">
+      <label class="pick" title="Choose a colour from the system picker">
         <input type="color" id="hexPick" aria-label="Colour picker">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8z" fill="currentColor" stroke="none"/></svg>
       </label>
-      <button class="mini drop" id="dropBtn" title="Eyedropper — take a colour off the drawing — I" aria-label="Eyedropper">
-        <svg viewBox="0 0 24 24">
-          <path d="M16.6 3.2a2.4 2.4 0 0 1 3.4 3.4l-1.6 1.6-3.4-3.4z"/>
-          <path d="M15.4 7.4 6.6 16.2l-1.5 4.4 4.4-1.5 8.8-8.8z"/>
-        </svg>
-      </button>
+      <button class="mini" id="dropBtn" title="Eyedropper — click the drawing to take the colour under the pointer — I">Pick</button>
       <button class="mini add" id="addSwatch" title="Add this colour to the palette" aria-label="Add colour">+</button>
     </div>
 
