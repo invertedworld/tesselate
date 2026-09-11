@@ -295,10 +295,19 @@ one it merely passes through. What it pulls:
 - line and curve endpoints, and the point an arc is bent through
 - both corners of a rectangle
 - circle centres, with the radius stepping half a cell at a time
+- the two ends of a freehand stroke
+- **anywhere along any mark** — its line, its arc, its rim, its side — ranked
+  last, so an end still wins wherever one is in reach
 - a mark being dragged with the select tool, by its own anchor — so a snapped
   mark stays snapped and a stray one is pulled into line
 
-Freehand is deliberately exempt: the pencil never touches the lattice.
+That last one is what makes the rest of it hold up with **the lattice off**.
+Named points alone left a click away from an end or a middle with nothing to
+catch on, so it fell through to the lattice: with the lattice off nothing
+happened, and with it on what looked like snapping to a mark was really
+snapping to a grid point that happened to lie under it.
+
+Freehand ignores the lattice when drawing: the pencil never touches it.
 
 Snapping the ends to the tile edge is what makes a motif meet its own
 reflection cleanly across the seam, and it closes shapes reliably enough for

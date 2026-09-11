@@ -457,14 +457,15 @@
     for (const sh of state.shapes) {
       if (sh.layer !== 'stroke') continue;
       for (const q of snapPointsOf(sh)) consider(q);
-      if (sh.kind === 'circle') {
-        // the nearest point on the rim, wherever the cursor happens to be
-        const dx = p.x - sh.c.x, dy = p.y - sh.c.y;
-        const len = Math.hypot(dx, dy);
-        if (len > 1e-6) {
-          consider({ x: sh.c.x + (dx / len) * sh.r, y: sh.c.y + (dy / len) * sh.r, kind: 'edge' });
-        }
-      }
+      /* And anywhere along the mark itself, not only the points that
+         have names. Without this, a click away from an end or a middle
+         had nothing to catch on and fell through to the lattice — so
+         with the lattice off there was nothing, and with it on what
+         looked like snapping to the mark was really snapping to a grid
+         point that happened to lie under it. Edges rank last, so an end
+         still wins wherever one is in reach. */
+      const near = nearestOnShape(sh, p);
+      if (near) consider({ x: near.p.x, y: near.p.y, kind: 'edge' });
     }
     return best;
   }

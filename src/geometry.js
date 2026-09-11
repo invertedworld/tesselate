@@ -631,6 +631,10 @@ function snapPointsOf(s) {
       ];
     case 'poly':
       return s.pts.map((p) => at(p, 'corner'));
+    case 'path':
+      // Freehand ignores the lattice, but where it started and stopped
+      // is still somewhere another mark may want to meet it.
+      return s.pts.length ? [at(s.pts[0], 'end'), at(s.pts[s.pts.length - 1], 'end')] : [];
     default:
       return [];
   }
