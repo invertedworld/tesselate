@@ -85,6 +85,15 @@ Because a drag now sweeps, the plane is panned with the select tool up by
 two-finger scrolling or a middle/right-drag rather than by dragging the paper.
 Pinch still zooms.
 
+**Cut** `⌘X`, **Copy** `⌘C` and **Paste** `⌘V` work on what you are holding.
+The marks go on the **real clipboard**, written as the same JSON a drawing is
+saved as, so a figure can be carried to another tile, another tab, another day —
+or pasted into a text editor and read. Everything comes back with fresh ids: a
+pasted group stays a group without joining a group already on the tile, and a
+pasted fill goes on naming the borders it arrived with. Each paste steps a
+little further from the last so they do not stack, and lands held by the select
+tool, ready to be dragged into place.
+
 **Group** `⌘G` binds what you are holding into one thing that moves, recolours
 and goes as a unit; **Ungroup** `⇧⌘G` lets it loose. A fill made against
 several marks is grouped with them already — this is the same binding, by hand.
@@ -112,7 +121,8 @@ to carry across the seam.
 *Solid shapes* fills circles and rectangles instead of outlining them.
 
 Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
-undo/redo `⌘Z` / `⇧⌘Z` · group `⌘G` / `⇧⌘G` · recentre `H` ·
+undo/redo `⌘Z` / `⇧⌘Z` · cut/copy/paste `⌘X` `⌘C` `⌘V` ·
+group `⌘G` / `⇧⌘G` · recentre `H` ·
 tile rules `G` · clip `K` ·
 wrap `W` · snap `S` · subdivide `D`
 

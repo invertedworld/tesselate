@@ -842,7 +842,7 @@
     document.getElementById('shapeCount').textContent =
       state.shapes.length + (state.shapes.length === 1 ? ' shape' : ' shapes');
     document.getElementById('undo').disabled = !undoStack.length;
-    syncGroupButtons();
+    syncEditButtons();
     document.getElementById('redo').disabled = !redoStack.length;
     if (!state.shapes.length) closeNewPrompt();
     setDirty(true);
@@ -1213,10 +1213,10 @@
   function select(list) {
     // A sweep over marks already in hand should not hold them twice.
     picked = [...new Set((list || []).filter(Boolean))];
-    syncGroupButtons();
+    syncEditButtons();
   }
 
-  function syncGroupButtons() {
+  function syncEditButtons() {
     const g = document.getElementById('groupBtn');
     const u = document.getElementById('ungroupBtn');
     if (!g || !u) return;
@@ -1225,6 +1225,9 @@
     const units = new Set(marks.map((sh) => sh.group || sh));
     g.disabled = units.size < 2;
     u.disabled = !marks.some((sh) => sh.group);
+    document.getElementById('cutBtn').disabled = !marks.length;
+    document.getElementById('copyBtn').disabled = !marks.length;
+    document.getElementById('pasteBtn').disabled = !clipboard.length;
   }
 
   /* Binding marks together. A group moves, recolours and goes as one
@@ -1263,6 +1266,114 @@
     replaceShapes(next);
     select(picked.map((sh) => swap.get(sh) || sh));
     flash(`${marks.length} marks let loose`);
+  }
+
+  /* ---------------- cut, copy, paste ----------------
+
+     The marks go on the real clipboard as the same JSON a drawing is
+     saved as, so a figure can be carried to another tile, another tab or
+     another day — and read on the way. Reading the clipboard outright
+     needs a permission prompt, so the paste comes off the browser's own
+     paste event, which hands it over without asking; a copy kept here
+     backs the buttons up. */
+
+  let clipboard = [];
+  let pasteRun = 0;
+
+  const inField = (t) => t instanceof HTMLInputElement
+    || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
+
+  function marksToText(marks) {
+    return '{\n "format": "tessera-marks",\n "version": 1,\n "marks": [\n'
+      + marks.map((sh) => '  ' + JSON.stringify(sh)).join(',\n') + '\n ]\n}\n';
+  }
+
+  function marksFromText(text) {
+    let d = null;
+    try { d = JSON.parse(text); } catch (err) { return null; }
+    const list = d && (Array.isArray(d.marks) ? d.marks : Array.isArray(d.shapes) ? d.shapes : null);
+    if (!list) return null;
+    const marks = list.filter((sh) => sh && sh.kind);
+    return marks.length ? marks : null;
+  }
+
+  /* Fresh ids all round. A pasted group stays a group without joining a
+     group already on the tile, and a pasted fill goes on naming the
+     borders it came with rather than whichever marks hold those ids now. */
+  function reseat(marks) {
+    const ids = new Map();
+    const groups = new Map();
+    const out = marks.map((sh) => {
+      const copy = Object.assign({}, sh);
+      ids.set(sh.id, shapeSeq);
+      copy.id = shapeSeq++;
+      if (sh.group) {
+        if (!groups.has(sh.group)) groups.set(sh.group, groupSeq++);
+        copy.group = groups.get(sh.group);
+      }
+      return copy;
+    });
+    for (const sh of out) {
+      if (Array.isArray(sh.walls)) sh.walls = sh.walls.map((id) => ids.get(id)).filter((v) => v != null);
+    }
+    return out;
+  }
+
+  function copyHeld(cut) {
+    const marks = heldMarks();
+    if (!marks.length) { flash('Nothing in hand to ' + (cut ? 'cut' : 'copy')); return null; }
+    clipboard = marks.map((sh) => Object.assign({}, sh));
+    pasteRun = 0;
+    syncEditButtons();
+    const many = marks.length === 1 ? 'mark' : 'marks';
+    if (cut) {
+      const gone = new Set(marks);
+      select([]);
+      replaceShapes(state.shapes.filter((sh) => !gone.has(sh)));
+    }
+    flash(`${marks.length} ${many} ${cut ? 'cut' : 'copied'}`);
+    return marksToText(clipboard);
+  }
+
+  function pasteMarks(marks) {
+    if (!marks || !marks.length) return flash('Nothing to paste');
+    pasteRun++;
+    const step = (snapping() ? T / effSub() : 40) * pasteRun;
+    const fresh = moveGroup(reseat(marks), step, step);
+    setTool('select');
+    replaceShapes(raise(state.shapes.concat(fresh), fresh));
+    select(fresh);
+    const many = fresh.length === 1 ? 'mark' : 'marks';
+    flash(`${fresh.length} ${many} pasted — drag to place`);
+  }
+
+  document.addEventListener('copy', (e) => {
+    if (inField(e.target) || !heldMarks().length) return;
+    e.preventDefault();
+    const text = copyHeld(false);
+    if (text && e.clipboardData) e.clipboardData.setData('text/plain', text);
+  });
+
+  document.addEventListener('cut', (e) => {
+    if (inField(e.target) || !heldMarks().length) return;
+    e.preventDefault();
+    const text = copyHeld(true);
+    if (text && e.clipboardData) e.clipboardData.setData('text/plain', text);
+  });
+
+  document.addEventListener('paste', (e) => {
+    if (inField(e.target)) return;
+    e.preventDefault();
+    const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+    pasteMarks(marksFromText(text) || clipboard);
+  });
+
+  // The buttons take the same road, except that only the paste event may
+  // read the clipboard without asking, so they fall back to this copy.
+  function copyToSystem(text) {
+    if (text && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
   }
 
   /* Topmost mark under the point. Outlines are tested first so a line
@@ -1941,6 +2052,9 @@
 
   document.getElementById('groupBtn').addEventListener('click', groupPicked);
   document.getElementById('ungroupBtn').addEventListener('click', ungroupPicked);
+  document.getElementById('cutBtn').addEventListener('click', () => copyToSystem(copyHeld(true)));
+  document.getElementById('copyBtn').addEventListener('click', () => copyToSystem(copyHeld(false)));
+  document.getElementById('pasteBtn').addEventListener('click', () => pasteMarks(clipboard));
 
   /* ---------------- palette ---------------- */
 

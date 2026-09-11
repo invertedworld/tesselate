@@ -193,6 +193,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .grid3 .wide { justify-content: center; text-align: center; padding: 8px 4px; }
 .exports { margin-top: 12px; }   /* the drawing's own file, then what comes off it */
 .binders { margin-top: 8px; }
+.binders + .binders { margin-top: 6px; }
 .wide:disabled { opacity: 0.32; cursor: default; }
 .wide:disabled:hover { background: transparent; }
 
