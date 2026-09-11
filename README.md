@@ -85,13 +85,11 @@ Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
 undo/redo `⌘Z` / `⇧⌘Z` · recentre `H` · tile rules `G` · clip `K` ·
 wrap `W` · snap `S` · subdivide `D`
 
-*Clear* asks before it goes ahead, in the rail rather than in a browser box —
-and `⌘Z` brings the marks back even after that.
-
 ### Off the table
 
 | | |
 |---|---|
+| **New** | Empties the tile and lets go of whatever file the drawing came from. It asks first — in the rail, not in a browser box — and `⌘Z` brings the marks back even after that |
 | **Load** `⌘O` / **Save** `⌘S` / **Save as** `⇧⌘S` | The drawing as a `.json` file — see below |
 | **Save SVG** | The pattern as vector paths, several whole blocks of it, with the alignment grid and crop marks left off |
 | **Save PNG** | The same frame you are looking at, marks only, on a clear ground |

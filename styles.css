@@ -188,10 +188,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .grid2 .wide { justify-content: center; text-align: center; }
 .grid2 .span2 { grid-column: 1 / -1; }
-.grid2 + .grid3, .grid3 + .grid2, .grid2 + .grid2, .filename + .grid2 { margin-top: 6px; }
+.grid2 + .grid2, .filename + .grid2, .confirm + .grid2 { margin-top: 6px; }
 .exports { margin-top: 12px; }   /* the drawing's own file, then what comes off it */
-.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.grid3 .wide { justify-content: center; text-align: center; padding: 8px 4px; font-size: 10px; }
 
 /* The file the drawing belongs to, with a dot while it has moved on. */
 .filename {
@@ -215,7 +213,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   vertical-align: 0.1em;
 }
 .filename.dirty::before { opacity: 1; }
-.wide.danger:hover { background: rgba(207, 67, 38, 0.1); border-color: rgba(207, 67, 38, 0.5); color: var(--accent); }
 
 .iconbtn {
   display: grid;
@@ -360,11 +357,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .mini:disabled { opacity: 0.32; cursor: default; }
 .mini:disabled:hover { background: transparent; }
-.mini.armed {
+.armed {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--paper);
 }
+.armed:hover { background: #b9351b; border-color: #b9351b; }
 
 .pal-name { display: flex; gap: 5px; margin-bottom: 9px; animation: unfold 0.16s ease both; }
 .pal-name input {

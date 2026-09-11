@@ -831,7 +831,7 @@
       state.shapes.length + (state.shapes.length === 1 ? ' shape' : ' shapes');
     document.getElementById('undo').disabled = !undoStack.length;
     document.getElementById('redo').disabled = !redoStack.length;
-    if (!state.shapes.length) closeClearPrompt();
+    if (!state.shapes.length) closeNewPrompt();
     setDirty(true);
     saveSoon();
   }
@@ -1569,7 +1569,7 @@
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    if (e.key === 'Escape' && closeClearPrompt()) { e.preventDefault(); return; }
+    if (e.key === 'Escape' && closeNewPrompt()) { e.preventDefault(); return; }
     // Space picks a tool now, so stop the browser scrolling the page or
     // re-clicking whichever button still holds focus.
     if (e.key === ' ') e.preventDefault();
@@ -2058,37 +2058,43 @@
 
   document.getElementById('undo').addEventListener('click', undo);
   document.getElementById('redo').addEventListener('click', redo);
-  /* Clearing asks first, in the rail — a browser box would take the
-     focus away from the drawing and looks nothing like the rest. */
-  const clearBtn = document.getElementById('clear');
-  const clearPrompt = document.getElementById('clearConfirm');
+  /* Starting again asks first, in the rail — a browser box would take
+     the focus away from the drawing and looks nothing like the rest.
+     A new drawing belongs to no file, so the handle goes with it. */
+  const newBtn = document.getElementById('newDrawing');
+  const newPrompt = document.getElementById('newConfirm');
 
-  function closeClearPrompt() {
-    if (clearPrompt.hidden) return false;
-    clearPrompt.hidden = true;
-    clearBtn.hidden = false;
+  function closeNewPrompt() {
+    if (newPrompt.hidden) return false;
+    newPrompt.hidden = true;
+    newBtn.classList.remove('armed');
     return true;
   }
 
-  clearBtn.addEventListener('click', () => {
+  function startNew() {
+    closeNewPrompt();
+    if (state.shapes.length) replaceShapes([]);
+    setFile(null, '');
+    setDirty(false);
+    flash('New drawing — ⌘Z brings the marks back');
+  }
+
+  newBtn.addEventListener('click', () => {
     const dropped = cancelDraft();
     selected = null;
     requestDraw();
     if (!state.shapes.length) {
+      if (fileHandle || fileNameEl.textContent) return startNew();
       return flash(dropped ? 'Unfinished mark dropped' : 'The tile is already empty');
     }
     const n = state.shapes.length;
-    document.getElementById('clearCount').textContent = `(${n} ${n === 1 ? 'mark' : 'marks'})`;
-    clearPrompt.hidden = false;
-    clearBtn.hidden = true;
-    document.getElementById('clearNo').focus();
+    document.getElementById('newCount').textContent = `(${n} ${n === 1 ? 'mark' : 'marks'})`;
+    newPrompt.hidden = false;
+    newBtn.classList.add('armed');   // it stays put: hiding it would reflow the row
+    document.getElementById('newNo').focus();
   });
-  document.getElementById('clearNo').addEventListener('click', closeClearPrompt);
-  document.getElementById('clearYes').addEventListener('click', () => {
-    closeClearPrompt();
-    replaceShapes([]);
-    flash('Tile cleared — ⌘Z brings it back');
-  });
+  document.getElementById('newNo').addEventListener('click', closeNewPrompt);
+  document.getElementById('newYes').addEventListener('click', startNew);
 
   function download(name, blob) {
     const url = URL.createObjectURL(blob);
@@ -2157,7 +2163,7 @@
   function setFile(handle, name) {
     fileHandle = handle || null;
     if (handle) putHandle(handle); else dropHandle();
-    showFile(name || (handle && handle.name) || fileNameEl.textContent || '');
+    showFile(name != null ? name : (handle ? handle.name : ''));
   }
 
   (async () => {

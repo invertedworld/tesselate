@@ -63,24 +63,24 @@
         <svg viewBox="0 0 24 24"><path d="M19.3 9.3H9.9a5.2 5.2 0 1 0 0 10.4h6.5"/><path d="M14.9 4.6l4.9 4.7-4.9 4.7"/></svg>
       </button>
     </div>
-    <div class="grid3">
+    <div class="grid2 files">
+      <button class="wide" id="newDrawing" title="Start a new drawing">New</button>
       <button class="wide" id="loadJson" title="Open a drawing — ⌘O">Load</button>
       <button class="wide" id="saveJson" title="Save the drawing back to its file — ⌘S">Save</button>
       <button class="wide" id="saveJsonAs" title="Save the drawing to a new file — ⇧⌘S">Save as</button>
     </div>
     <p class="filename mono" id="fileName" hidden></p>
+    <div class="confirm" id="newConfirm" hidden>
+      <p>Start again and lose what is on the tile? <span class="mono" id="newCount"></span></p>
+      <div class="grid2">
+        <button class="wide" id="newNo">Keep them</button>
+        <button class="wide fatal" id="newYes">New</button>
+      </div>
+    </div>
     <div class="grid2 exports">
       <button class="wide" id="exportSvg">Save SVG</button>
       <button class="wide" id="exportPng">Save PNG</button>
       <button class="wide span2" id="copyPng" title="Copy the tiling to the clipboard as a PNG">Copy PNG</button>
-      <button class="wide danger span2" id="clear" title="Clear the tile">Clear</button>
-    </div>
-    <div class="confirm" id="clearConfirm" hidden>
-      <p>Clear every mark on the tile? <span class="mono" id="clearCount"></span></p>
-      <div class="grid2">
-        <button class="wide" id="clearNo">Keep them</button>
-        <button class="wide fatal" id="clearYes">Clear</button>
-      </div>
     </div>
   </section>
 
