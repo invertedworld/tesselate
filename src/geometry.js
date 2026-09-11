@@ -290,6 +290,50 @@ function maskToLoops(mask, W, H) {
   return loops;
 }
 
+/* Take the staircase off a traced ring without rounding its corners.
+
+   Which is which is a question of distance, not of angle. Tracing a
+   circle leaves a ring whose points all sit within a cell of the true
+   edge — the places are right — but the path between them crosses and
+   recrosses it, so every arm turns back on the last by fifty degrees or
+   more. Judging a corner by how sharply it turns calls each of those a
+   corner and leaves the whole staircase standing, which is what a
+   zoomed-in fill edge showed. A corner worth keeping is one that stands
+   well off the line between its neighbours: the tip of a wedge is tens
+   of cells out, a stair is under one. So that is what is asked.
+
+   The move is a quarter of the way towards the neighbours, repeated,
+   and held within `cap` of where the trace put the point throughout —
+   so the ring never walks away from the area that was flooded, however
+   many passes it takes. Each pass halves what is left of the staircase;
+   three take a cell of it down to well under a pixel on the paper. */
+function ease(ring, cap, passes) {
+  const n = ring.length;
+  const keep = ring.map((p, i) => {
+    const a = ring[(i - 1 + n) % n], b = ring[(i + 1) % n];
+    const ux = b.x - a.x, uy = b.y - a.y;
+    const len = Math.hypot(ux, uy);
+    if (len < 1e-9) return false;
+    // How far the point stands off the line through its neighbours.
+    return Math.abs((p.x - a.x) * uy - (p.y - a.y) * ux) / len > cap * 1.5;
+  });
+  let cur = ring;
+  for (let pass = 0; pass < (passes || 3); pass++) {
+    const prev = cur;
+    cur = prev.map((p, i) => {
+      if (keep[i]) return p;
+      const a = prev[(i - 1 + n) % n], b = prev[(i + 1) % n];
+      const o = ring[i];
+      let mx = (a.x + 2 * p.x + b.x) / 4 - o.x;
+      let my = (a.y + 2 * p.y + b.y) / 4 - o.y;
+      const m = Math.hypot(mx, my);
+      if (m > cap) { mx = (mx * cap) / m; my = (my * cap) / m; }
+      return { x: o.x + mx, y: o.y + my };
+    });
+  }
+  return cur;
+}
+
 /* Turn a grown mask into closed polygons in tile units. */
 function loopsFromMask(mask, W, H, eps) {
   const scale = T / W;
@@ -299,39 +343,14 @@ function loopsFromMask(mask, W, H, eps) {
       const ring = loop.concat([loop[0]]);
       const simp = simplify(ring, eps == null ? 2 : eps);
       simp.pop();
-      /* One easing pass takes the staircase off the traced edge, but a
-         sharp corner is left where it is: averaging pulls a point like
+      /* Easing takes the staircase off the traced edge, but a sharp
+         corner has to be left where it is: averaging pulls a point like
          the tip of a wedge inwards, which opens a notch exactly where
          the fill most needs to reach. The ends wrap round, since these
-         rings are closed.
-
-         The move is capped at the tolerance the ring was simplified at.
-         Averaging with the neighbours is a move of a quarter of the way
-         towards them, which is nothing while they are a cell away — but
-         simplification has just left them a hundred cells away, and
-         there the same quarter takes a corner clean off. A staircase
-         that survived simplification is under a cell out of line, so a
-         cell of movement is all the easing ever needs. */
+         rings are closed. */
       const n = simp.length;
       const cap = eps == null ? 2 : eps;
-      const eased = n < 4 ? simp : simp.map((p, i) => {
-        const a = simp[(i - 1 + n) % n], b = simp[(i + 1) % n];
-        const ux = p.x - a.x, uy = p.y - a.y;
-        const vx = b.x - p.x, vy = b.y - p.y;
-        const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
-        if (lu > 1e-9 && lv > 1e-9) {
-          /* cos of the turn. A corner is anything that turns by more
-             than a shallow bend: a 45° one, which is what every corner
-             of a diagonal figure is, was being treated as a curve. */
-          const cos = (ux * vx + uy * vy) / (lu * lv);
-          if (cos < 0.9) return p;
-        }
-        const tx = (a.x + 2 * p.x + b.x) / 4, ty = (a.y + 2 * p.y + b.y) / 4;
-        const mx = tx - p.x, my = ty - p.y;
-        const m = Math.hypot(mx, my);
-        if (m <= cap) return { x: tx, y: ty };
-        return { x: p.x + (mx * cap) / m, y: p.y + (my * cap) / m };
-      });
+      const eased = n < 4 ? simp : ease(simp, cap);
       return eased.map((p) => ({ x: p.x * scale, y: p.y * scale }));
     })
     .filter((l) => l.length >= 3);
