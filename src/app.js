@@ -1560,43 +1560,103 @@
      lying across a filled area still wins. `interior` adds a final
      pass through the middle of unfilled closed shapes, which is what
      you want when picking something up but not when rubbing it out. */
+  // World back into one square's own frame — the inverse of placeIn.
+  function unplaceIn(w, i, j) {
+    const r = rotAt(state.pattern, i, j);
+    let dx = w.x - i * T - T / 2, dy = w.y - j * T - T / 2;
+    for (let k = (4 - r) % 4; k > 0; k--) { const t = dx; dx = -dy; dy = t; }
+    return { x: dx + T / 2, y: dy + T / 2 };
+  }
+
+  /* A mark may run past its own square and, with clipping off, show
+     there — so the ink under the cursor can belong to a neighbour's
+     copy of it, at coordinates this square knows nothing about. That
+     ink was unerasable: the tool looked only where this square would
+     have drawn the mark, found nothing, and did nothing. `anyTile` looks
+     outward from this square as well, mapping the point back through
+     each neighbour's own quarter-turn. It is off where a hit starts a
+     drag, since a mark grabbed by a turned neighbour's copy would
+     follow the pointer turned. */
   function hitTest(p, opts) {
     const o = opts || {};
+    /* In order of what the eye would pick out: a border first, then the
+       interior a closed mark carries, then a fill, then the inside of an
+       open shape. Borders and interiors used to be one pass, so a mark
+       holding an interior answered for every click inside itself — and a
+       line drawn across such a mark could not be got at, whatever you
+       did. Now the border wins wherever it is. */
+    const passes = o.strokesOnly ? ['edge', 'interior']
+      : o.interior ? ['edge', 'interior', 'fill', 'inside']
+      : ['edge', 'interior', 'fill'];
+
+    /* Where to look. This square first; then, with `anyTile`, outward
+       from it — because a mark may run past its own square and, with
+       clipping off, show there, so the ink under the cursor can belong
+       to a neighbour's copy at coordinates this square knows nothing
+       about. That ink was untouchable: the tool looked only where this
+       square would have drawn the mark, found nothing, and did nothing.
+       Each pass is tried in every square before the next begins, so a
+       border anywhere beats a fill here — which is the order they are
+       painted in, and so the order they are seen in. */
+    const spots = [p];
+    if (o.anyTile && !state.clip) {
+      const pad = Math.min(overhang(state.shapes), 2);
+      if (pad) {
+        const home = drawTile || activeTile;
+        const world = placeIn(p, home.i, home.j);
+        for (let ring = 1; ring <= pad; ring++) {
+          for (let dj = -ring; dj <= ring; dj++) {
+            for (let di = -ring; di <= ring; di++) {
+              if (Math.max(Math.abs(di), Math.abs(dj)) !== ring) continue;
+              spots.push(unplaceIn(world, home.i + di, home.j + dj));
+            }
+          }
+        }
+      }
+    }
+
+    for (const pass of passes) {
+      for (const q of spots) {
+        const hit = hitPass(q, o, pass);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  function hitPass(p, o, pass) {
     const tol = Math.max(7 / state.view.scale, 2);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     let hit = null;
-    const passes = o.strokesOnly ? ['stroke']
-      : o.interior ? ['stroke', 'fill', 'inside']
-      : ['stroke', 'fill'];
-    for (const pass of passes) {
-      for (let k = state.shapes.length - 1; k >= 0; k--) {
-        const s = state.shapes[k];
-        const path = pathOf(s);
-        if (pass === 'stroke') {
-          if (s.layer !== 'stroke') continue;
-          if (s.filled && ctx.isPointInPath(path, p.x, p.y)) { hit = s; break; }
-          // `edgeOnly` keeps the border and the interior tellable apart,
-          // which is what lets the fill tool recolour one or the other.
-          if (!o.edgeOnly && s.fillColor && ctx.isPointInPath(path, p.x, p.y)) { hit = s; break; }
-          ctx.lineWidth = Math.max(s.width, tol * 2);
-          if (ctx.isPointInStroke(path, p.x, p.y)) { hit = s; break; }
-        } else if (pass === 'fill') {
-          if (s.layer !== 'fill') continue;
-          if (ctx.isPointInPath(path, p.x, p.y, 'evenodd')) { hit = s; break; }
-        } else {
-          if (s.layer !== 'stroke' || s.filled || !CLOSED[s.kind]) continue;
-          if (ctx.isPointInPath(path, p.x, p.y)) { hit = s; break; }
-        }
+    for (let k = state.shapes.length - 1; k >= 0; k--) {
+      const s = state.shapes[k];
+      const path = pathOf(s);
+      if (pass === 'edge') {
+        if (s.layer !== 'stroke') continue;
+        // A solid shape is all ink, so its whole area is its border.
+        if (s.filled && ctx.isPointInPath(path, p.x, p.y)) { hit = s; break; }
+        ctx.lineWidth = Math.max(s.width, tol * 2);
+        if (ctx.isPointInStroke(path, p.x, p.y)) { hit = s; break; }
+      } else if (pass === 'interior') {
+        // `edgeOnly` keeps the border and the interior tellable apart,
+        // which is what lets the fill tool recolour one or the other.
+        if (s.layer !== 'stroke' || o.edgeOnly || s.filled || !s.fillColor) continue;
+        if (ctx.isPointInPath(path, p.x, p.y)) { hit = s; break; }
+      } else if (pass === 'fill') {
+        if (s.layer !== 'fill') continue;
+        if (ctx.isPointInPath(path, p.x, p.y, 'evenodd')) { hit = s; break; }
+      } else {
+        if (s.layer !== 'stroke' || s.filled || !CLOSED[s.kind]) continue;
+        if (ctx.isPointInPath(path, p.x, p.y)) { hit = s; break; }
       }
-      if (hit) break;
     }
     ctx.restore();
     return hit;
   }
 
   function eraseAt(w) {
-    const hit = hitTest(w);
+    const hit = hitTest(w, { anyTile: true });
     if (hit) replaceShapes(state.shapes.filter((s) => s !== hit));
   }
 
@@ -1661,7 +1721,7 @@
     // Landing on a mark's border recolours the border. Interiors and
     // filled areas fall through to the flood below, so a region can
     // still be cut up by new lines and its parts filled separately.
-    const onEdge = hitTest(w, { strokesOnly: true, edgeOnly: true });
+    const onEdge = hitTest(w, { strokesOnly: true, edgeOnly: true, anyTile: true });
     if (onEdge) return recolour(onEdge);
 
     const offs = state.wrap ? WRAP : ORIGIN;
@@ -1823,7 +1883,7 @@
     // The grid can only place an edge to the nearest cell. Move each
     // point onto the true edge of the mark it belongs to, a hair inside
     // so it tucks under rather than meeting it exactly.
-    const loops = snapLoopsToWalls(traced, walls, 2 / k, 0.4);
+    const loops = snapLoopsToWalls(traced, walls, 2 / k, 0.6);
 
     /* Everything traced came off a grid laid over this one tile, so a
        loop that lies wholly outside it is not part of the area that was

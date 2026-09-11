@@ -722,24 +722,67 @@ function nearestOnShape(s, v) {
   }
 }
 
+/* Put a point at `want` from a wall's centreline, on the side it is
+   already on. */
+function offWall(s, v, want) {
+  const hit = nearestOnShape(s, v);
+  if (!hit || hit.d < 1e-6) return null;
+  const k = want / hit.d;
+  return { x: hit.p.x + (v.x - hit.p.x) * k, y: hit.p.y + (v.y - hit.p.y) * k };
+}
+
+/* Two points on the same wall are joined by a straight chord, and along
+   a round wall that chord cuts inside it — by the sagitta, which on a
+   circle of any size grows as the square of the gap between them. The
+   points were tucked a hair under the ink; the chord between them was
+   not, and came out from under it, leaving a bare crescent between fill
+   and border. So the wall is followed: halve the chord, put the middle
+   back on the wall, and keep halving until what is left is under a
+   quarter unit. A straight wall passes the test first time and gains
+   nothing. */
+function followWall(s, a, b, want, depth, out) {
+  if (depth <= 0) return;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const q = offWall(s, mid, want);
+  if (!q) return;
+  if (Math.hypot(q.x - mid.x, q.y - mid.y) < 0.15) return;
+  followWall(s, a, q, want, depth - 1, out);
+  out.push(q);
+  followWall(s, q, b, want, depth - 1, out);
+}
+
 function snapLoopsToWalls(loops, walls, tol, inset) {
   if (!walls.length) return loops;
-  return loops.map((loop) => loop.map((v) => {
-    let best = null, bestErr = tol;
-    for (const s of walls) {
-      const half = (s.filled ? 0 : s.width) / 2;
-      if (half <= 0) continue;
-      const hit = nearestOnShape(s, v);
-      if (!hit || hit.d < 1e-6) continue;
-      const err = Math.abs(hit.d - half);
-      if (err < bestErr) { bestErr = err; best = { hit, half }; }
+  return loops.map((loop) => {
+    const put = loop.map((v) => {
+      let best = null, bestErr = tol;
+      for (const s of walls) {
+        const half = (s.filled ? 0 : s.width) / 2;
+        if (half <= 0) continue;
+        const hit = nearestOnShape(s, v);
+        if (!hit || hit.d < 1e-6) continue;
+        const err = Math.abs(hit.d - half);
+        if (err < bestErr) { bestErr = err; best = { hit, half, wall: s }; }
+      }
+      if (!best) return { p: v, wall: null, want: 0 };
+      const want = Math.max(0, best.half - inset);
+      const k = want / best.hit.d;
+      return {
+        p: {
+          x: best.hit.p.x + (v.x - best.hit.p.x) * k,
+          y: best.hit.p.y + (v.y - best.hit.p.y) * k,
+        },
+        wall: best.wall,
+        want,
+      };
+    });
+
+    const out = [];
+    for (let i = 0; i < put.length; i++) {
+      const a = put[i], b = put[(i + 1) % put.length];
+      out.push(a.p);
+      if (a.wall && a.wall === b.wall) followWall(a.wall, a.p, b.p, a.want, 6, out);
     }
-    if (!best) return v;
-    const want = Math.max(0, best.half - inset);
-    const k = want / best.hit.d;
-    return {
-      x: best.hit.p.x + (v.x - best.hit.p.x) * k,
-      y: best.hit.p.y + (v.y - best.hit.p.y) * k,
-    };
-  }));
+    return out;
+  });
 }

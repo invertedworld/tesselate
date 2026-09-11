@@ -42,7 +42,7 @@ mark — it stays live and follows the cursor until the second click, and
 | **Circle** `C` | Click the centre, then click to set the radius; `Shift` quantises it |
 | **Rect** `R` | Click a corner, then the opposite one; `Shift` for a square. On the **Iso** frame it draws a rhombus instead — a face of a cube |
 | **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. Click a mark instead and it takes the current ink. Filling an area again recolours it in place, and an already-filled area can still be cut up by new lines and its parts filled separately |
-| **Erase** `E` | Click or drag across a mark to remove it |
+| **Erase** `E` | Click or drag across a mark to remove it. A border answers before the interior of the mark holding it, and before a fill, so a line drawn across a filled shape can still be got at — and a mark can be rubbed out by any of its ink, including the part that has run over a neighbouring square |
 
 Straight geometry is stroked with **flat ends**, so a line stops exactly on
 the point it was placed on and runs flush to the tile edge to meet its own
@@ -382,6 +382,15 @@ Each of its points is then moved onto the **true** edge of whichever mark it is
 closest to: half that mark's width out from its centreline, less a hair so it
 tucks under rather than meeting exactly. The marks are exact, so the fill's
 edge becomes exact too.
+
+Points are not enough on a **round** wall, though. Two of them are joined by a
+straight chord, and a chord across a circle cuts inside it — by the sagitta,
+which grows as the square of the gap between them. The points were tucked under
+the ink; the chord between them was not, and came out from under it, leaving a
+bare crescent between fill and border. So the wall is followed: halve the
+chord, put the middle back on the wall, and keep halving until what is left is
+under a sixth of a unit. A straight wall passes that test first time and gains
+nothing.
 
 What gets stored is the resulting polygon — outer contour plus any holes, drawn
 with the even-odd rule — never the bitmap.
