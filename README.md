@@ -309,7 +309,10 @@ presets are stored relative to it.
 ## Plane
 
 - **Tile rules** — the tile grid drawn across the plane, with the symmetry
-  block's boundaries heavier. Display only
+  block's boundaries heavier again. They read darker and thicker than the
+  alignment lattice inside them, so the structure sits over the drafting aid
+  rather than under it; where the squares are packed too close to carry a
+  wider line they drop back to a hairline. Display only
 - **Clip to tile** — on cuts every mark at the tile's edge. Off by default, so
   a mark that runs past the seam bleeds over its neighbours and overlaps them,
   which is usually what you want while drawing. With it off the plane is

@@ -65,10 +65,14 @@
   }
 
   const GROUND = '#ede8db';
-  const RULE_MINOR = 'rgba(23,22,15,0.09)';
-  const SUB_RULE = 'rgba(23,22,15,0.14)';
-  const SUB_FINE = 'rgba(23,22,15,0.07)';
-  const RULE_MAJOR = 'rgba(23,22,15,0.2)';
+  /* The squares themselves read over the lattice inside them: darker,
+     and thicker where there is room for it, with the block's own
+     boundaries heavier again. A drafting aid sits under the structure it
+     is drafted on. */
+  const RULE_MINOR = 'rgba(23,22,15,0.3)';
+  const RULE_MAJOR = 'rgba(23,22,15,0.46)';
+  const SUB_RULE = 'rgba(23,22,15,0.13)';
+  const SUB_FINE = 'rgba(23,22,15,0.065)';
   const ACCENT = '#cf4326';
 
   const MAX_TILES = 1500;   // caps how far you can zoom out
@@ -526,11 +530,14 @@
      they also snap to the pixel grid; turned, they simply draw true. */
   let cleanFrame = false;   // exporting: artwork only, no drawing aids
   let crispRot = true;
+  /* An odd-width line lands crisply sitting on a half pixel, an even one
+     sitting on a whole one. */
+  let hairSnap = 0.5;
   function hairLine(ax, ay, bx, by) {
     const p = w2s(ax, ay), q = w2s(bx, by);
     if (crispRot) {
-      if (Math.abs(p.x - q.x) < 0.01) { const x = Math.round(p.x) + 0.5; p.x = x; q.x = x; }
-      if (Math.abs(p.y - q.y) < 0.01) { const y = Math.round(p.y) + 0.5; p.y = y; q.y = y; }
+      if (Math.abs(p.x - q.x) < 0.01) { const x = Math.round(p.x) + hairSnap; p.x = x; q.x = x; }
+      if (Math.abs(p.y - q.y) < 0.01) { const y = Math.round(p.y) + hairSnap; p.y = y; q.y = y; }
     }
     ctx.moveTo(p.x, p.y);
     ctx.lineTo(q.x, q.y);
@@ -776,8 +783,12 @@
   function drawRules(R) {
     const n = state.pattern.n;
     const minor = R.step > 15;
-    ctx.lineWidth = 1;
+    // A wider line only helps while the squares are big enough to carry
+    // it; packed together they would close up into a grey wash.
+    const room = R.step > 70;
     if (minor) {
+      ctx.lineWidth = room ? 2 : 1;
+      hairSnap = room ? 0 : 0.5;
       ctx.strokeStyle = RULE_MINOR;
       ctx.beginPath();
       for (let i = R.i0; i <= R.i1 + 1; i++) {
@@ -791,6 +802,8 @@
       ctx.stroke();
     }
     if (n > 1 || !minor) {
+      ctx.lineWidth = room ? 3 : 1;
+      hairSnap = 0.5;
       ctx.strokeStyle = RULE_MAJOR;
       ctx.beginPath();
       const s = n > 1 ? n : 1;
@@ -802,6 +815,8 @@
       }
       ctx.stroke();
     }
+    ctx.lineWidth = 1;
+    hairSnap = 0.5;
   }
 
   // The drafting lattice, drawn on the drawing surface only.
