@@ -181,9 +181,19 @@ instanced once per tile with a rotation, over a block-aligned sheet of at least
 
 ### How fill stays vector
 
-The fill tool rasterises only the current tile's strokes into an offscreen
-scratch grid, floods the area under the cursor, grows the mask a little so it
-tucks under the surrounding strokes, then walks the mask boundary into closed
-loops and simplifies them (Douglas–Peucker). What gets stored is the resulting
-polygon — outer contour plus any holes, drawn with the even-odd rule — never the
-bitmap.
+The fill rasterises the tile's marks into a scratch grid only to work out
+*which* enclosed area was clicked. It floods from the cursor (eight-connected,
+since the gap where two marks converge is a diagonal channel), bridges the cell
+or two the grid loses where that gap pinches shut, walks the boundary into
+closed loops and simplifies them.
+
+A grid can only place an edge to the nearest cell, which leaves a fill either
+short of the mark bounding it or spilling past it — and no amount of tuning the
+grid fixes both at once. So the traced ring is used for its **topology** only.
+Each of its points is then moved onto the **true** edge of whichever mark it is
+closest to: half that mark's width out from its centreline, less a hair so it
+tucks under rather than meeting exactly. The marks are exact, so the fill's
+edge becomes exact too.
+
+What gets stored is the resulting polygon — outer contour plus any holes, drawn
+with the even-odd rule — never the bitmap.

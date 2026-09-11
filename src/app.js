@@ -1254,15 +1254,7 @@
     }
     const walls = [...bounding].map((i) => state.shapes[i]).filter(Boolean);
 
-    /* How far to tuck the area under the marks around it. The flood
-       cannot enter a passage narrower than a cell, so a shallow wedge
-       stops short of its point; growing the area afterwards is what
-       recovers the tip. Since a fill is always painted beneath its own
-       border, it can safely be grown by half the width of the thinnest
-       mark holding it in — a margin taken off so it stays inside. */
-    let half = 24;
-    for (const sh of walls) half = Math.min(half, Math.max(sh.width, 2 / k) / 2);
-    const grow = clamp(Math.floor(half * k) - 1, FILL_GROW, 40);
+    const grow = FILL_GROW;
 
     /* Where two marks converge, the passage between them narrows below
        one cell of the grid long before the marks themselves meet, and
@@ -1276,10 +1268,12 @@
     const filled = floodMask(pinched, R, R, seed.x, seed.y, state.wrap) || raw;
     const mask = dilate(filled, R, R, grow, state.wrap);
 
-    // Simplify by less than the area is tucked under the marks, so the
-    // polygon can never pull back far enough to show paper at an edge.
-    const loops = loopsFromMask(mask, R, R, 1);
-    if (!loops) return flash('No open area under the cursor');
+    const traced = loopsFromMask(mask, R, R, 1);
+    if (!traced) return flash('No open area under the cursor');
+    // The grid can only place an edge to the nearest cell. Move each
+    // point onto the true edge of the mark it belongs to, a hair inside
+    // so it tucks under rather than meeting it exactly.
+    const loops = snapLoopsToWalls(traced, walls, 2 / k, 0.4);
     const region = { kind: 'region', loops };
 
     const host = interiorHost(w, region);

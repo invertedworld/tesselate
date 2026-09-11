@@ -533,3 +533,98 @@ function bisectorFoot(a, b, m) {
   const t = (m.x - mid.x) * nx + (m.y - mid.y) * ny;
   return { x: mid.x + nx * t, y: mid.y + ny * t };
 }
+
+/* ---- Putting a traced fill onto the real edges ------------------
+   A raster flood can only place a boundary to the nearest cell, so a
+   fill traced from one either falls short of the mark that bounds it or
+   spills past it. The marks themselves are exact though, so the traced
+   ring is used for its topology only — which area was clicked — and each
+   of its points is then moved onto the true edge of whichever mark it is
+   closest to, half that mark's width out from its centreline, less a
+   hair so it tucks under rather than meeting it exactly.
+   ---------------------------------------------------------------- */
+
+function nearestOnSegment(a, b, v) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((v.x - a.x) * dx + (v.y - a.y) * dy) / len2));
+  const p = { x: a.x + dx * t, y: a.y + dy * t };
+  return { p, d: Math.hypot(v.x - p.x, v.y - p.y) };
+}
+
+function nearestOnPolyline(pts, v, closed) {
+  let best = null;
+  const n = pts.length;
+  for (let i = 0; i + 1 < n || (closed && i < n); i++) {
+    const hit = nearestOnSegment(pts[i % n], pts[(i + 1) % n], v);
+    if (!best || hit.d < best.d) best = hit;
+  }
+  return best;
+}
+
+function nearestOnShape(s, v) {
+  switch (s.kind) {
+    case 'line':
+      return nearestOnSegment(s.a, s.b, v);
+    case 'curve': {
+      // sample the arc, then bisect around the closest sample
+      const at = (t) => { const u = 1 - t; return {
+        x: u * u * s.a.x + 2 * u * t * s.c.x + t * t * s.b.x,
+        y: u * u * s.a.y + 2 * u * t * s.c.y + t * t * s.b.y }; };
+      let bt = 0, bd = Infinity;
+      for (let i = 0; i <= 24; i++) {
+        const t = i / 24, d = Math.hypot(at(t).x - v.x, at(t).y - v.y);
+        if (d < bd) { bd = d; bt = t; }
+      }
+      let step = 1 / 24;
+      for (let k = 0; k < 12; k++) {
+        step /= 2;
+        for (const t of [bt - step, bt + step]) {
+          if (t < 0 || t > 1) continue;
+          const d = Math.hypot(at(t).x - v.x, at(t).y - v.y);
+          if (d < bd) { bd = d; bt = t; }
+        }
+      }
+      return { p: at(bt), d: bd };
+    }
+    case 'circle': {
+      const dx = v.x - s.c.x, dy = v.y - s.c.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-9) return null;
+      return { p: { x: s.c.x + (dx / len) * s.r, y: s.c.y + (dy / len) * s.r }, d: Math.abs(len - s.r) };
+    }
+    case 'rect':
+      return nearestOnPolyline([
+        { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y },
+        { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h },
+      ], v, true);
+    case 'poly':
+      return nearestOnPolyline(s.pts, v, true);
+    case 'path':
+      return s.pts.length > 1 ? nearestOnPolyline(s.pts, v, false) : null;
+    default:
+      return null;
+  }
+}
+
+function snapLoopsToWalls(loops, walls, tol, inset) {
+  if (!walls.length) return loops;
+  return loops.map((loop) => loop.map((v) => {
+    let best = null, bestErr = tol;
+    for (const s of walls) {
+      const half = (s.filled ? 0 : s.width) / 2;
+      if (half <= 0) continue;
+      const hit = nearestOnShape(s, v);
+      if (!hit || hit.d < 1e-6) continue;
+      const err = Math.abs(hit.d - half);
+      if (err < bestErr) { bestErr = err; best = { hit, half }; }
+    }
+    if (!best) return v;
+    const want = Math.max(0, best.half - inset);
+    const k = want / best.hit.d;
+    return {
+      x: best.hit.p.x + (v.x - best.hit.p.x) * k,
+      y: best.hit.p.y + (v.y - best.hit.p.y) * k,
+    };
+  }));
+}
