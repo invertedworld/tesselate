@@ -8,7 +8,12 @@ Everything is vector: the drawing is a list of paths, curves, circles and filled
 regions in tile coordinates, redrawn from those primitives at whatever zoom you
 are at. Nothing is stored as pixels, and `Save SVG` writes real geometry.
 
+**[Open the drawing table →](https://invertedworld.github.io/tessera/)**
+
 ## Running it
+
+It runs entirely in the browser: nothing is uploaded, and a drawing in progress
+is kept in that browser's own storage until you save it to a file.
 
 Open `index.html` — no build step, no dependencies. To work on it, serve it
 with `serve.py`, which sends `Cache-Control: no-store`:
@@ -266,3 +271,8 @@ edge becomes exact too.
 
 What gets stored is the resulting polygon — outer contour plus any holes, drawn
 with the even-odd rule — never the bitmap.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). The typefaces are Google Fonts (Fraunces and IBM
+Plex Mono), loaded from Google's CDN under their own open licences.
