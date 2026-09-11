@@ -163,12 +163,19 @@ function floodMask(barrier, W, H, sx, sy, wrap) {
   const mask = new Uint8Array(W * H);
   const stack = [sy * W + sx];
   mask[sy * W + sx] = 1;
+  /* Eight-connected, not four. Where two marks converge the gap between
+     them is a diagonal channel, and a diagonal channel one cell wide has
+     no shared edges for a four-connected flood to cross — it needs twice
+     the width, which is exactly the band that was left unfilled at a
+     sharp point. */
+  const DX = [-1, 1, 0, 0, -1, 1, -1, 1];
+  const DY = [0, 0, -1, 1, -1, -1, 1, 1];
   while (stack.length) {
     const i = stack.pop();
     const x = i % W, y = (i - x) / W;
-    for (let k = 0; k < 4; k++) {
-      let nx = x + (k === 0 ? -1 : k === 1 ? 1 : 0);
-      let ny = y + (k === 2 ? -1 : k === 3 ? 1 : 0);
+    for (let k = 0; k < 8; k++) {
+      let nx = x + DX[k];
+      let ny = y + DY[k];
       if (wrap) {
         if (nx < 0) nx += W; else if (nx >= W) nx -= W;
         if (ny < 0) ny += H; else if (ny >= H) ny -= H;
@@ -292,7 +299,25 @@ function loopsFromMask(mask, W, H, eps) {
       const ring = loop.concat([loop[0]]);
       const simp = simplify(ring, eps == null ? 2 : eps);
       simp.pop();
-      return simp.map((p) => ({ x: p.x * scale, y: p.y * scale }));
+      /* One easing pass takes the staircase off the traced edge, but a
+         sharp corner is left where it is: averaging pulls a point like
+         the tip of a wedge inwards, which opens a notch exactly where
+         the fill most needs to reach. The ends wrap round, since these
+         rings are closed. */
+      const n = simp.length;
+      const eased = n < 4 ? simp : simp.map((p, i) => {
+        const a = simp[(i - 1 + n) % n], b = simp[(i + 1) % n];
+        const ux = p.x - a.x, uy = p.y - a.y;
+        const vx = b.x - p.x, vy = b.y - p.y;
+        const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+        if (lu > 1e-9 && lv > 1e-9) {
+          // cos of the turn; below a half turn's worth is a real corner
+          const cos = (ux * vx + uy * vy) / (lu * lv);
+          if (cos < 0.5) return p;
+        }
+        return { x: (a.x + 2 * p.x + b.x) / 4, y: (a.y + 2 * p.y + b.y) / 4 };
+      });
+      return eased.map((p) => ({ x: p.x * scale, y: p.y * scale }));
     })
     .filter((l) => l.length >= 3);
   return loops.length ? loops : null;

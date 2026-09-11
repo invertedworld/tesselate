@@ -1263,9 +1263,22 @@
     let half = 24;
     for (const sh of walls) half = Math.min(half, Math.max(sh.width, 2 / k) / 2);
     const grow = clamp(Math.floor(half * k) - 1, FILL_GROW, 40);
-    const mask = dilate(raw, R, R, grow, state.wrap);
 
-    const loops = loopsFromMask(mask, R, R, 2);
+    /* Where two marks converge, the passage between them narrows below
+       one cell of the grid long before the marks themselves meet, and
+       the flood gives up there — leaving a pocket of unfilled paper past
+       the pinch. Growing the area bridges that pinch, so flooding a
+       second time through the bridge picks the pocket up. Real ink is
+       thicker than the bridge, so nothing escapes through it. */
+    const bridged = dilate(raw, R, R, grow, state.wrap);
+    const pinched = new Uint8Array(R * R);
+    for (let i = 0, n = R * R; i < n; i++) pinched[i] = barrier[i] && !bridged[i] ? 1 : 0;
+    const filled = floodMask(pinched, R, R, seed.x, seed.y, state.wrap) || raw;
+    const mask = dilate(filled, R, R, grow, state.wrap);
+
+    // Simplify by less than the area is tucked under the marks, so the
+    // polygon can never pull back far enough to show paper at an edge.
+    const loops = loopsFromMask(mask, R, R, 1);
     if (!loops) return flash('No open area under the cursor');
     const region = { kind: 'region', loops };
 

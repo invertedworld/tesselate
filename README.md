@@ -10,9 +10,14 @@ are at. Nothing is stored as pixels, and `Save SVG` writes real geometry.
 
 ## Running it
 
-Open `index.html` — no build step, no dependencies. For a local server:
+Open `index.html` — no build step, no dependencies. To work on it, serve it
+with `serve.py`, which sends `Cache-Control: no-store`:
 
-    python3 -m http.server 8000     # then visit localhost:8000
+    ./serve.py 8000                 # then visit localhost:8000
+
+That matters: `python3 -m http.server` sends no cache headers at all, so a
+browser may go on serving an old `src/app.js` long after you have changed it,
+and an edit appears to do nothing.
 
 ## Drawing
 
