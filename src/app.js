@@ -144,7 +144,7 @@
 
   const HINTS = {
     base: 'Draw in any square · two-finger scroll to pan · pinch to zoom',
-    select: 'Select — click to pick up, Shift-click to add · two-finger sweep takes an area',
+    select: 'Select — click to pick up, Shift-click to add · drag the paper to sweep an area',
     pencil: 'Pencil — draw freely inside the frame',
     line: 'Line — click each point in turn; Esc finishes · Shift holds it square or to 45°',
     curve: 'Arc — click the two ends, then click to set the bend',
@@ -882,9 +882,16 @@
         drawTile = activeTile;
         endLasso(true);
         const hit = hitTest(w, { interior: true });
-        if (!hit) { select([]); requestDraw(); return false; }
+        const add = !!(e && (e.shiftKey || e.metaKey || e.ctrlKey));
+        // Nothing under the press: drag an area out from it instead.
+        if (!hit) {
+          lasso = { a: w, b: w, base: add ? picked.slice() : [] };
+          if (!add) select([]);
+          requestDraw();
+          return true;
+        }
         // Shift adds a mark to what is held, or puts it back down.
-        if (e && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+        if (add) {
           const unit = new Set(groupOf(hit));
           const had = picked.some((sh) => unit.has(sh));
           select(had ? picked.filter((sh) => !unit.has(sh)) : picked.concat([hit]));
@@ -990,6 +997,15 @@
   }
 
   function moveDraw(w) {
+    if (lasso) {
+      lasso.b = w;
+      select(lasso.base.concat(caughtBy(lassoBox())));
+      setHint(picked.length
+        ? `Sweeping — ${picked.length} ${picked.length === 1 ? 'mark' : 'marks'} inside`
+        : 'Sweeping an area — anything wholly inside it is picked up', true);
+      requestDraw();
+      return;
+    }
     if (moving) {
       let dx = w.x - moving.from.x;
       let dy = w.y - moving.from.y;
@@ -1125,6 +1141,7 @@
   }
 
   function endDraw() {
+    if (lasso) { endLasso(); return; }
     if (moving) {
       const m = moving;
       moving = null;
@@ -1194,7 +1211,8 @@
   }
 
   function select(list) {
-    picked = (list || []).filter(Boolean);
+    // A sweep over marks already in hand should not hold them twice.
+    picked = [...new Set((list || []).filter(Boolean))];
     syncGroupButtons();
   }
 
@@ -1573,7 +1591,7 @@
     pointers.delete(e.pointerId);
     // A quick flick can release past the last pointermove; take the
     // release position as the final one.
-    if (mode === 'draw' && (draft || moving)) {
+    if (mode === 'draw' && (draft || moving || lasso)) {
       const s = screenPt(e);
       moveDraw(drawPt(s.x, s.y));
     }
@@ -1596,41 +1614,16 @@
   canvas.addEventListener('pointercancel', release);
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  /* Sweeping an area with two fingers. With the select tool up, the
-     two-finger scroll that would pan the plane drags the far corner of
-     a box out from where the pointer is instead; everything that ends
-     up wholly inside it is picked up when the fingers stop. The corner
-     follows the fingers, the same way the paper does when panning. */
-  function sweepLasso(s, dx, dy) {
-    if (!lasso) {
-      lasso = { a: { x: s.x, y: s.y }, b: { x: s.x, y: s.y }, timer: 0 };
-      /* Two fingers on a trackpad cannot move the pointer, so nothing
-         follows them and the gesture reads as dead. The far corner is
-         what is actually moving, so it becomes the pointer: the real one
-         is hidden for the sweep and a drawn one takes its place. */
-      canvas.classList.add('sweeping');
-    }
-    lasso.b.x -= dx;
-    lasso.b.y -= dy;
-    clearTimeout(lasso.timer);
-    lasso.timer = setTimeout(() => endLasso(), 180);
-    // Pick up as the box grows, so the sweep shows what it is taking
-    // rather than only telling you once it has stopped.
-    select(caughtBy(lassoBox()));
-    setHint(picked.length
-      ? `Sweeping — ${picked.length} ${picked.length === 1 ? 'mark' : 'marks'} inside`
-      : 'Sweeping an area — anything wholly inside it is picked up', true);
-    requestDraw();
-  }
-
+  /* Sweeping an area. With the select tool up, a drag that starts on
+     empty paper pulls a box out from where it began; the count follows
+     the pointer, and everything wholly inside is held on release. */
   function caughtBy(box) {
     return box ? state.shapes.filter((sh) => holds(box, shapeBBox(sh))) : [];
   }
 
   function lassoBox() {
     if (!lasso) return null;
-    const a = drawPt(lasso.a.x, lasso.a.y);
-    const b = drawPt(lasso.b.x, lasso.b.y);
+    const a = lasso.a, b = lasso.b;
     const box = {
       x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y),
       x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y),
@@ -1647,14 +1640,13 @@
 
   function endLasso(drop) {
     if (!lasso) return false;
-    clearTimeout(lasso.timer);
     const box = drop ? null : lassoBox();
+    const base = lasso.base;
     lasso = null;
-    canvas.classList.remove('sweeping');
-    if (drop) select([]);
+    if (drop) select(base);
     if (box) {
       const caught = caughtBy(box);
-      select(caught);
+      select(base.concat(caught));
       flash(caught.length
         ? `${caught.length} ${caught.length === 1 ? 'mark' : 'marks'} picked up`
         : 'Nothing wholly inside that area');
@@ -1665,9 +1657,7 @@
 
   function drawLasso() {
     const box = lassoBox();
-    // The drawn pointer shows from the first flick, before the box is
-    // big enough to be worth outlining.
-    if (!box) { drawSweepPointer(); return; }
+    if (!box) return;
     const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]
       .map(([x, y]) => { const q = fromTileSpace({ x, y }); return w2s(q.x, q.y); });
     ctx.save();
@@ -1683,30 +1673,6 @@
     ctx.setLineDash([4, 3]);
     ctx.stroke();
     ctx.restore();
-    drawSweepPointer();
-  }
-
-  // The corner the fingers are dragging, drawn as the pointer it stands in for.
-  function drawSweepPointer() {
-    if (!lasso) return;
-    const p = lasso.b;
-    const arm = 9;
-    ctx.save();
-    ctx.strokeStyle = ACCENT;
-    ctx.lineWidth = 1.4;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(p.x - arm, p.y); ctx.lineTo(p.x - 3, p.y);
-    ctx.moveTo(p.x + 3, p.y); ctx.lineTo(p.x + arm, p.y);
-    ctx.moveTo(p.x, p.y - arm); ctx.lineTo(p.x, p.y - 3);
-    ctx.moveTo(p.x, p.y + 3); ctx.lineTo(p.x, p.y + arm);
-    ctx.stroke();
-    ctx.globalAlpha = 0.35;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
-    ctx.fillStyle = ACCENT;
-    ctx.fill();
-    ctx.restore();
   }
 
   /* trackpad: pinch arrives as a ctrl-flagged wheel, two-finger
@@ -1716,10 +1682,7 @@
     const s = screenPt(e);
     const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? ch : 1;
     if (e.ctrlKey || e.metaKey) {
-      endLasso(true);
       zoomAt(s.x, s.y, Math.exp(-e.deltaY * 0.01));
-    } else if (state.tool === 'select' && !moving && !pending && !draft) {
-      sweepLasso(s, e.deltaX * k, e.deltaY * k);
     } else {
       state.view.x -= e.deltaX * k;
       state.view.y -= e.deltaY * k;
