@@ -823,8 +823,10 @@
       return w2s(q.x, q.y);
     });
     ctx.save();
-    ctx.strokeStyle = ACCENT;
-    ctx.globalAlpha = 0.7;
+    // Ink black, not the accent: the box says where a thing is, which is
+    // not something that needs to shout.
+    ctx.strokeStyle = '#17160f';
+    ctx.globalAlpha = 0.75;
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
