@@ -10,6 +10,8 @@ are at. Nothing is stored as pixels, and `Save SVG` writes real geometry.
 
 **[Open the drawing table →](https://invertedworld.github.io/tessera/)**
 
+![The table, with a filled triangle and an arc repeating under a pinwheel block](docs/screenshot.jpg)
+
 ## Running it
 
 It runs entirely in the browser: nothing is uploaded, and a drawing in progress
