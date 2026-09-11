@@ -142,7 +142,7 @@ exactly where you drew it and the pattern follows.
 Marks may start on the tile edge and run past it — that is how a motif is made
 to carry across the seam.
 
-*Solid shapes* fills circles and rectangles instead of outlining them.
+*Filled shapes* fills circles and rectangles instead of outlining them.
 
 Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
 undo/redo `⌘Z` / `⇧⌘Z` · cut/copy/paste `⌘X` `⌘C` `⌘V` ·
