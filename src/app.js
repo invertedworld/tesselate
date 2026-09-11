@@ -807,6 +807,16 @@
     afterChange();
   }
 
+  /* Opening a drawing, or starting one, is a new session rather than an
+     edit: the steps behind it belong to a picture that is no longer on
+     the table, so undoing into them would make no sense. */
+  function adoptShapes(next) {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    state.shapes = next;
+    afterChange();
+  }
+
   function undo() {
     cancelDraft();
     selected = null;
@@ -2074,10 +2084,10 @@
 
   function startNew(quiet) {
     closeNewPrompt();
-    if (state.shapes.length) replaceShapes([]);
+    adoptShapes([]);
     setFile(null, '');
     setDirty(false);
-    if (!quiet) flash('New drawing — ⌘Z brings the marks back');
+    if (!quiet) flash('New drawing — a clean tile and no history');
   }
 
   newBtn.addEventListener('click', () => {
@@ -2255,10 +2265,11 @@
     cancelDraft();
     selected = null;
     adoptIds(marks);
-    replaceShapes(marks);     // undoable: ⌘Z puts back what was on the table
+    adoptShapes(marks);
     setDirty(false);
     setFile(handle || null, name);
-    flash(`Loaded ${name} — ⌘Z brings back what was there`);
+    const n = marks.length;
+    flash(`Loaded ${name} — ${n} ${n === 1 ? 'mark' : 'marks'}`);
   }
 
   const loadInput = document.createElement('input');

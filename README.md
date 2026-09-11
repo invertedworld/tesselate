@@ -89,7 +89,7 @@ wrap `W` · snap `S` · subdivide `D`
 
 | | |
 |---|---|
-| **New** | Empties the tile and lets go of whatever file the drawing came from. With marks on the table it asks *Do you want to save your changes?* first — in the rail, not in a browser box. **Yes** saves and then starts over, and backing out of the file picker leaves everything as it was; **No** starts over anyway; **Cancel** or `Esc` goes back. `⌘Z` brings the marks back either way |
+| **New** | A clean tile: it lets go of whatever file the drawing came from and drops the undo history with it. With marks on the table it asks *Do you want to save your changes?* first — in the rail, not in a browser box. **Yes** saves and then starts over, and backing out of the file picker leaves everything as it was; **No** starts over anyway; **Cancel** or `Esc` goes back |
 | **Load** `⌘O` / **Save** `⌘S` / **Save as** `⇧⌘S` | The drawing as a `.json` file — see below |
 | **Save SVG** | The pattern as vector paths, several whole blocks of it, with the alignment grid and crop marks left off |
 | **Save PNG** | The same frame you are looking at, marks only, on a clear ground |
@@ -129,7 +129,9 @@ first save after coming back may ask once for permission, then goes quiet.
 opens a file chooser. The file in play is named under the buttons, with a
 vermilion dot while the drawing has moved on since it was written.
 
-Loading is undoable: `⌘Z` puts back whatever was on the table.
+Opening a drawing, or starting one, is a new session rather than an edit, so
+the **undo history goes** with it: the steps behind it belong to a picture that
+is no longer on the table. Save before you load if the marks matter.
 
 Pan by two-finger scrolling, middle/right-dragging, or dragging empty space
 with the select tool.
