@@ -62,6 +62,8 @@ body { display: flex; }
 .rail::-webkit-scrollbar-thumb { background: var(--ink-12); }
 
 .panel { padding: 12px 20px 13px; border-bottom: 1px solid var(--ink-12); }
+/* Nothing follows the last panel, so its rule would just hang in the gap. */
+.rail > .panel:last-child { border-bottom: none; }
 .rail > section.panel:first-of-type { padding-top: 17px; }
 
 .label {
@@ -602,16 +604,6 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 16px; border: 0; bor
   line-height: 1.45;
   color: var(--ink-42);
   letter-spacing: 0.01em;
-}
-
-.rail-foot {
-  margin-top: auto;
-  padding: 12px 20px 14px;
-  display: flex;
-  justify-content: space-between;
-  color: var(--ink-42);
-  border-top: 1px solid var(--ink-12);
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------- stage ---------------- */

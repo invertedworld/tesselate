@@ -226,7 +226,6 @@
   const canvas = document.getElementById('stage');
   const ctx = canvas.getContext('2d');
   const hintEl = document.getElementById('hint');
-  const zoomEl = document.getElementById('zoomVal');
 
   const state = {
     shapes: [],
@@ -663,7 +662,6 @@
     if (picked.length) drawSelection();
     if (lasso) drawLasso();
     if (hoverSnap) drawSnapMark();
-    zoomEl.textContent = Math.round(scale * 100) + '%';
   }
 
   /* `part` paints one half of a mark that has both: 'inside' its own
@@ -1034,8 +1032,6 @@
 
   function afterChange() {
     requestDraw();
-    document.getElementById('shapeCount').textContent =
-      state.shapes.length + (state.shapes.length === 1 ? ' shape' : ' shapes');
     document.getElementById('undo').disabled = !undoStack.length;
     syncEditButtons();
     document.getElementById('redo').disabled = !redoStack.length;
