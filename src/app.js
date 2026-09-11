@@ -1237,9 +1237,38 @@
       x: clamp(Math.round(w.x * k), 0, R - 1),
       y: clamp(Math.round(w.y * k), 0, R - 1),
     };
-    const traced = traceRegion(barrier, R, R, seed, { grow: FILL_GROW, eps: 2, wrap: state.wrap });
-    if (!traced) return flash('No open area under the cursor');
-    const region = traced.shape;
+    const raw = floodMask(barrier, R, R, seed.x, seed.y, state.wrap);
+    if (!raw) return flash('No open area under the cursor');
+
+    /* Which marks did the area come up against? Read from a little way
+       outside it: only a stroke's fully opaque core carries a
+       trustworthy index, because the canvas stores colour premultiplied
+       by alpha and along a soft edge a small index like 3 comes back as
+       2, naming an entirely different mark. */
+    const reach = dilate(raw, R, R, 6, state.wrap);
+    const bounding = new Set();
+    for (let i = 0, n = R * R; i < n; i++) {
+      if (!reach[i] || px[i * 4 + 3] !== 255) continue;
+      const id = px[i * 4] | (px[i * 4 + 1] << 8);
+      if (id >= 1 && id <= state.shapes.length) bounding.add(id - 1);
+    }
+    const walls = [...bounding].map((i) => state.shapes[i]).filter(Boolean);
+
+    /* How far to tuck the area under the marks around it. The flood
+       cannot enter a passage narrower than a cell, so a shallow wedge
+       stops short of its point; growing the area afterwards is what
+       recovers the tip. Since a fill is always painted beneath its own
+       border, it can safely be grown by half the width of the thinnest
+       mark holding it in — a margin taken off so it stays inside. */
+    let half = 24;
+    for (const sh of walls) half = Math.min(half, Math.max(sh.width, 2 / k) / 2);
+    const grow = clamp(Math.floor(half * k) - 1, FILL_GROW, 40);
+    const mask = dilate(raw, R, R, grow, state.wrap);
+
+    const loops = loopsFromMask(mask, R, R, 2);
+    if (!loops) return flash('No open area under the cursor');
+    const region = { kind: 'region', loops };
+
     const host = interiorHost(w, region);
     if (host) {
       if (host.fillColor === state.color) return flash('Already that ink');
@@ -1252,25 +1281,6 @@
     region.id = shapeSeq++;
     region.layer = 'fill';
     region.color = state.color;
-
-    // Which marks did the area come up against? The grown mask overlaps
-    // them, and only their solid middles are read so that a blended edge
-    // pixel cannot name the wrong one.
-    // Reach a little further than the fill polygon does: only a stroke's
-    // fully opaque core carries a trustworthy index, and on a thin line
-    // that core is a pixel or two in from its edge.
-    const reach = dilate(traced.mask, R, R, FILL_GROW * 2, state.wrap);
-    const bounding = new Set();
-    for (let i = 0, n = R * R; i < n; i++) {
-      // Only fully opaque pixels carry a trustworthy index: the canvas
-      // stores colour premultiplied by alpha, so along a stroke's soft
-      // edge a small index like 3 can come back as 2 and name an
-      // entirely different mark.
-      if (!reach[i] || px[i * 4 + 3] !== 255) continue;
-      const id = px[i * 4] | (px[i * 4 + 1] << 8);
-      if (id >= 1 && id <= state.shapes.length) bounding.add(id - 1);
-    }
-    const walls = [...bounding].map((i) => state.shapes[i]).filter(Boolean);
     // Remember what the area came up against, so it can never be painted
     // over the top of it.
     region.walls = walls.map((sh) => sh.id).filter((v) => v != null);
@@ -1280,12 +1290,12 @@
     // picture together.
     let top = false, bottom = false, left = false, right = false;
     for (let x = 0; x < R; x++) {
-      if (traced.mask[x]) top = true;
-      if (traced.mask[(R - 1) * R + x]) bottom = true;
+      if (raw[x]) top = true;
+      if (raw[(R - 1) * R + x]) bottom = true;
     }
     for (let y = 0; y < R; y++) {
-      if (traced.mask[y * R]) left = true;
-      if (traced.mask[y * R + R - 1]) right = true;
+      if (raw[y * R]) left = true;
+      if (raw[y * R + R - 1]) right = true;
     }
     const isGround = top && bottom && left && right;
 

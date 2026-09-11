@@ -283,27 +283,19 @@ function maskToLoops(mask, W, H) {
   return loops;
 }
 
-/* Turn a seed point + barrier grid into a vector `region` shape. */
-function traceRegion(barrier, W, H, seed, opts = {}) {
-  const grow = opts.grow == null ? 2 : opts.grow;
-  const raw = floodMask(barrier, W, H, seed.x | 0, seed.y | 0, opts.wrap);
-  if (!raw) return null;
-  const mask = grow > 0 ? dilate(raw, W, H, grow, opts.wrap) : raw;
-  const s = T / W;
-  const eps = opts.eps == null ? 1.1 : opts.eps;
+/* Turn a grown mask into closed polygons in tile units. */
+function loopsFromMask(mask, W, H, eps) {
+  const scale = T / W;
   const loops = maskToLoops(mask, W, H)
     .map((loop) => {
       // Close the ring before simplifying so the seam is not a corner.
       const ring = loop.concat([loop[0]]);
-      const simp = simplify(ring, eps);
+      const simp = simplify(ring, eps == null ? 2 : eps);
       simp.pop();
-      return simp.map((p) => ({ x: p.x * s, y: p.y * s }));
+      return simp.map((p) => ({ x: p.x * scale, y: p.y * scale }));
     })
     .filter((l) => l.length >= 3);
-  if (!loops.length) return null;
-  // The grown mask comes back too: the caller uses it to work out which
-  // marks the area was bounded by.
-  return { shape: { kind: 'region', loops }, mask };
+  return loops.length ? loops : null;
 }
 
 /* ---- Misc helpers ---------------------------------------------- */
