@@ -2014,6 +2014,7 @@
     const w = drawPt(s.x, s.y);
 
     const panGesture = e.button === 1 || e.button === 2;
+    if (dropper && !panGesture) { pickFrom(s); return; }
 
     // A mark waiting on its next click is set wherever that click lands,
     // including in another square.
@@ -2244,10 +2245,12 @@
     if (e.key === 'Shift') { shiftHeld = true; return; }
     if (e.key === 'Alt') { altHeld = true; noteHover(lastWorld); return; }
     if (e.key === 'Escape') {
+      if (dropper) { armDropper(false); return; }
       if (endLasso(true)) { requestDraw(); return; }
       if (!cancelDraft() && picked.length) { select([]); requestDraw(); }
       return;
     }
+    if (k === 'i') { armDropper(!dropper); return; }
     if (TOOL_KEYS[k]) { setTool(TOOL_KEYS[k]); return; }
     if (k >= '1' && k <= '9') { setColor(currentColors()[+k - 1]); return; }
     if (k === '0') { setColor(currentColors()[9]); return; }
@@ -2292,6 +2295,7 @@
     if (pending) cancelDraft();
     if (tool !== 'select') select([]);
     endLasso(true);
+    if (dropper) armDropper(false);
     state.tool = tool;
     canvas.classList.toggle('selecting', tool === 'select');
     canvas.classList.remove('grabbable');
@@ -2315,6 +2319,31 @@
       }
     }
     saveSoon();
+  }
+
+  /* The eyedropper reads the canvas, not the screen: the paper grain
+     lies over the whole window on a multiply blend, so anything sampled
+     off the screen would come back tinted and grainy, never the colour
+     that is actually in the drawing. */
+  let dropper = false;
+
+  function armDropper(on) {
+    dropper = on;
+    document.getElementById('dropBtn').classList.toggle('armed', on);
+    canvas.classList.toggle('dropping', on);
+    if (on) setHint('Click anywhere in the drawing to take its colour · Esc to stop', true);
+    else setHint(HINTS[state.tool] || HINTS.base);
+  }
+
+  function pickFrom(s) {
+    const x = clamp(Math.round(s.x * dpr), 0, canvas.width - 1);
+    const y = clamp(Math.round(s.y * dpr), 0, canvas.height - 1);
+    const px = ctx.getImageData(x, y, 1, 1).data;
+    armDropper(false);
+    if (px[3] < 8) return flash('Nothing there to take');
+    const hex = '#' + [px[0], px[1], px[2]].map((v) => v.toString(16).padStart(2, '0')).join('');
+    setColor(hex);
+    flash(`Took ${hex}`);
   }
 
   function setWidth(v) {
@@ -2602,6 +2631,7 @@
   });
   palDelBtn.addEventListener('click', deletePalette);
   document.getElementById('addSwatch').addEventListener('click', addSwatch);
+  document.getElementById('dropBtn').addEventListener('click', () => armDropper(!dropper));
 
   hexInput.addEventListener('input', () => {
     const hex = normHex(hexInput.value);

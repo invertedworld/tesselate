@@ -213,8 +213,13 @@ Three palettes come with the table — **Riso**, **Bauhaus** and **Graphite**,
 fifteen colours each — and you can keep as many of your own as you like.
 
 Under the swatches is the mixer: a **hex field** that takes any of `#rrggbb`,
-`#rgb`, `#rrggbbaa` or `#rgba`, with or without the `#`, and an eyedropper
-button for the system colour picker. **Alpha** sets how far through the ink
+`#rgb`, `#rrggbbaa` or `#rgba`, with or without the `#`; a half-filled circle
+that opens the system colour picker; and an **eyedropper** `I` that takes a
+colour off the drawing itself — arm it and the next click anywhere on the plane
+picks up what is under it, `Esc` to put it down. It reads the canvas rather
+than the screen, because the paper grain lies over the window on a multiply
+blend and anything sampled through it would come back tinted and grainy rather
+than the colour that is actually in the drawing. **Alpha** sets how far through the ink
 you can see; a colour keeps its short form while it is solid and gains the
 extra two digits the moment it is not, so the swatch and the field always
 agree. Translucent ink is real ink: it fills, strokes, exports and layers like

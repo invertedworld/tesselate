@@ -508,6 +508,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   cursor: pointer;
 }
 .mini.add { width: 26px; height: 26px; padding: 0; font-size: 14px; line-height: 1; }
+.mini.drop { width: 26px; height: 26px; padding: 0; }
+.mini.drop svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 .row { display: flex; align-items: center; gap: 9px; }
 .slide { margin-top: 9px; }
@@ -623,6 +633,7 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 16px; border: 0; bor
 #stage.outside { cursor: grab; }
 #stage.selecting { cursor: default; }
 #stage.grabbable { cursor: move; }
+#stage.dropping { cursor: crosshair; }
 
 .hud {
   position: absolute;
