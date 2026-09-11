@@ -1607,7 +1607,25 @@
     // point onto the true edge of the mark it belongs to, a hair inside
     // so it tucks under rather than meeting it exactly.
     const loops = snapLoopsToWalls(traced, walls, 2 / k, 0.4);
-    const region = { kind: 'region', loops };
+
+    /* Everything traced came off a grid laid over this one tile, so a
+       loop that lies wholly outside it is not part of the area that was
+       clicked. Keeping one leaves a splinter of fill a tile away, which
+       then travels with the mark and turns up in its selection. A loop
+       may still overhang the edge by the depth of the tuck. */
+    const near = loops.filter((l) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const p of l) {
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      }
+      const m = 8;
+      return x1 >= -m && x0 <= T + m && y1 >= -m && y0 <= T + m;
+    });
+    if (!near.length) return flash('No open area under the cursor');
+    const region = { kind: 'region', loops: near };
 
     const host = interiorHost(w, region);
     if (host) {
