@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Tessera — a plane-symmetry drawing table</title>
+<title>Tessera</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -15,13 +15,8 @@
 
 <aside class="rail">
 
-  <header class="brand">
-    <h1>Tessera</h1>
-    <p>a plane&#8209;symmetry drawing table</p>
-  </header>
-
   <section class="panel">
-    <div class="label"><span>Instrument</span><i></i></div>
+    <div class="label"><span>Tool</span><i></i></div>
     <div class="tools" id="tools">
       <button class="tool" data-tool="select" title="Select — Space (click a mark, drag to move)">
         <svg viewBox="0 0 24 24"><path d="M6 3.2v15.1l4.1-3.8 2.7 5.9 2.6-1.2-2.7-5.9 5.7-.6z"/></svg>
@@ -59,26 +54,68 @@
   </section>
 
   <section class="panel">
-    <div class="label"><span>Ink</span><i></i></div>
-    <div class="swatches" id="swatches"></div>
-    <div class="row weight">
-      <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke weight">
-      <span class="mono num" id="widthVal">9</span>
+    <div class="label"><span>Table</span><i></i></div>
+    <div class="grid2">
+      <button class="iconbtn" id="undo" title="Undo — ⌘Z" aria-label="Undo">
+        <svg viewBox="0 0 24 24"><path d="M4.7 9.3h9.4a5.2 5.2 0 1 1 0 10.4H7.6"/><path d="M9.1 4.6L4.2 9.3l4.9 4.7"/></svg>
+      </button>
+      <button class="iconbtn" id="redo" title="Redo — ⇧⌘Z" aria-label="Redo">
+        <svg viewBox="0 0 24 24"><path d="M19.3 9.3H9.9a5.2 5.2 0 1 0 0 10.4h6.5"/><path d="M14.9 4.6l4.9 4.7-4.9 4.7"/></svg>
+      </button>
+      <button class="wide" id="exportSvg">Save SVG</button>
+      <button class="wide" id="exportPng">Save PNG</button>
+      <button class="wide danger span2" id="clear" title="Clear the tile">Clear</button>
     </div>
-    <button class="wide toggle" data-toggle="filled" id="filledBtn">
-      <span class="tick"></span><span>Solid shapes</span>
-    </button>
+    <div class="confirm" id="clearConfirm" hidden>
+      <p>Clear every mark on the tile? <span class="mono" id="clearCount"></span></p>
+      <div class="grid2">
+        <button class="wide" id="clearNo">Keep them</button>
+        <button class="wide fatal" id="clearYes">Clear</button>
+      </div>
+    </div>
   </section>
 
   <section class="panel">
-    <div class="label"><span>Symmetry</span><i></i></div>
-    <div class="chips" id="presets"></div>
-    <div class="row block-row">
-      <span class="mono tiny">Block</span>
-      <div class="sizes" id="sizes"></div>
+    <div class="label"><span>Palette</span><i></i></div>
+
+    <div class="pal-bar">
+      <div class="sel"><select id="palSel" aria-label="Palette"></select></div>
+      <button class="mini" id="palNew" title="Save these colours as a new named palette">New</button>
+      <button class="mini" id="palDel" title="Delete this palette">Del</button>
     </div>
-    <div class="pattern-grid" id="patternGrid"></div>
-    <p class="note">Click a tile to turn it a quarter. The upright arrow is your drawing surface.</p>
+
+    <div class="pal-name" id="palNameRow" hidden>
+      <input type="text" id="palName" class="mono" maxlength="22" placeholder="Name it" spellcheck="false" autocomplete="off">
+      <button class="mini" id="palSave" title="Save the palette">Save</button>
+      <button class="mini" id="palCancel" title="Cancel" aria-label="Cancel">&#215;</button>
+    </div>
+
+    <div class="swatches" id="swatches"></div>
+
+    <div class="mixer">
+      <span class="swatch-preview"><span class="well chk"><i id="mixInk"></i></span></span>
+      <input type="text" id="hexInput" class="mono hex" spellcheck="false" autocomplete="off" maxlength="9" aria-label="Hex colour" placeholder="#rrggbbaa">
+      <label class="pick" title="Pick a colour">
+        <input type="color" id="hexPick" aria-label="Colour picker">
+        <svg viewBox="0 0 24 24"><path d="M15.4 3.9l4.7 4.7M17.8 6.3l-8.9 8.9-4 1.1 1.1-4 8.9-8.9a2 2 0 0 1 2.9 2.9z"/><path d="M4.3 19.7h15.4"/></svg>
+      </label>
+      <button class="mini add" id="addSwatch" title="Add this colour to the palette" aria-label="Add colour">+</button>
+    </div>
+
+    <div class="row slide">
+      <span class="mono tiny">Alpha</span>
+      <input type="range" id="alpha" min="0" max="100" step="1" value="100" aria-label="Opacity">
+      <span class="mono num" id="alphaVal">100</span>
+    </div>
+    <div class="row slide">
+      <span class="mono tiny">Width</span>
+      <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke weight">
+      <span class="mono num" id="widthVal">9</span>
+    </div>
+
+    <button class="wide toggle" data-toggle="filled" id="filledBtn">
+      <span class="tick"></span><span>Solid shapes</span>
+    </button>
   </section>
 
   <section class="panel">
@@ -99,17 +136,18 @@
     </div>
   </section>
 
-  <section class="panel">
-    <div class="label"><span>Table</span><i></i></div>
-    <div class="grid2">
-      <button class="wide" id="undo" title="Undo — ⌘Z">Undo</button>
-      <button class="wide" id="redo" title="Redo — ⇧⌘Z">Redo</button>
-      <button class="wide" id="resetView" title="Recentre the view — H">Recentre</button>
-      <button class="wide danger" id="clear" title="Clear the tile">Clear</button>
-      <button class="wide" id="exportSvg">Save SVG</button>
-      <button class="wide" id="exportPng">Save PNG</button>
+  <details class="panel fold" id="symmetryPanel">
+    <summary class="label"><span>Symmetry</span><i></i><b class="fold-mark" aria-hidden="true"></b></summary>
+    <div class="fold-body">
+      <div class="chips" id="presets"></div>
+      <div class="row block-row">
+        <span class="mono tiny">Block</span>
+        <div class="sizes" id="sizes"></div>
+      </div>
+      <div class="pattern-grid" id="patternGrid"></div>
+      <p class="note">Click a tile to turn it a quarter. The upright arrow is your drawing surface.</p>
     </div>
-  </section>
+  </details>
 
   <footer class="rail-foot mono tiny">
     <span id="shapeCount">0 shapes</span>

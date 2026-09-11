@@ -10,10 +10,59 @@
 (function () {
   'use strict';
 
-  const PALETTE = [
-    '#17160f', '#cf4326', '#e08a1e', '#c9a227', '#4e8f45',
-    '#237f86', '#2b4a9c', '#6c4a9e', '#c4407c', '#fbf9f3',
+  /* Palettes. The built-ins are read-only; asking to add a colour to one
+     forks it into a palette of your own, which is what you wanted anyway. */
+  const BUILT_IN = [
+    { name: 'Riso', colors: [
+      '#17160f', '#57534a', '#cf4326', '#e2574c', '#e08a1e',
+      '#c9a227', '#8fae3c', '#4e8f45', '#237f86', '#2b4a9c',
+      '#5aa7d8', '#6c4a9e', '#c4407c', '#f0a6b4', '#fbf9f3',
+    ] },
+    { name: 'Bauhaus', colors: [
+      '#0f0f0f', '#3b3b3b', '#7a7a7a', '#d8d5cc', '#ffffff',
+      '#d8232a', '#f06d3a', '#f5a623', '#f4d35e', '#1c4f9c',
+      '#2f80ed', '#1f9d8f', '#2aa757', '#8b3f98', '#e56a9c',
+    ] },
+    { name: 'Graphite', colors: [
+      '#0b0b0b', '#1f1e1a', '#35332c', '#4b483f', '#615d52',
+      '#787366', '#8f897a', '#a69f8f', '#bdb5a4', '#d3cbba',
+      '#e6dfd0', '#f6f2e8', '#ffffff', '#6b5a3e', '#a08654',
+    ] },
   ];
+  const PALETTE = BUILT_IN[0].colors;
+
+  /* ---------------- colour ----------------
+     A colour is '#rrggbb', or '#rrggbbaa' once it is less than solid —
+     opaque colours keep their short form so older saves still match. */
+
+  function normHex(str) {
+    if (typeof str !== 'string') return null;
+    let h = str.trim().replace(/^#/, '').toLowerCase();
+    if (!/^[0-9a-f]+$/.test(h)) return null;
+    if (h.length === 3 || h.length === 4) h = h.split('').map((c) => c + c).join('');
+    if (h.length !== 6 && h.length !== 8) return null;
+    if (h.length === 8 && h.slice(6) === 'ff') h = h.slice(0, 6);
+    return '#' + h;
+  }
+
+  function rgbOf(hex) { return (normHex(hex) || '#17160f').slice(0, 7); }
+
+  function alphaOf(hex) {
+    const h = normHex(hex) || '';
+    return h.length === 9 ? parseInt(h.slice(7), 16) : 255;
+  }
+
+  function withAlpha(hex, a) {
+    const v = clamp(Math.round(a), 0, 255);
+    return v >= 255 ? rgbOf(hex) : rgbOf(hex) + v.toString(16).padStart(2, '0');
+  }
+
+  // SVG keeps colour and opacity in separate attributes, so a translucent
+  // mark survives the trip into editors that never learned 8-digit hex.
+  function svgPaint(attr, hex) {
+    const a = alphaOf(hex);
+    return `${attr}="${rgbOf(hex)}"` + (a < 255 ? ` ${attr}-opacity="${+(a / 255).toFixed(4)}"` : '');
+  }
 
   const GROUND = '#ede8db';
   const TILE_BG = '#f4f0e5';
@@ -113,8 +162,10 @@
   const state = {
     shapes: [],
     tool: 'pencil',
-    color: PALETTE[1],
+    color: PALETTE[2],
     width: 9,
+    palette: BUILT_IN[0].name,
+    palettes: [],       // the user's own named palettes
     filled: false,
     grid: true,
     clip: true,
@@ -601,7 +652,7 @@
     ctx.lineCap = cap;
     ctx.lineJoin = join;
     ctx.globalAlpha = 0.4;
-    ctx.strokeStyle = shape.color === ACCENT ? '#17160f' : ACCENT;
+    ctx.strokeStyle = rgbOf(shape.color) === ACCENT ? '#17160f' : ACCENT;
     ctx.lineWidth = pen + 8 / v.scale;
     ctx.stroke(pathOf(shape));
     ctx.globalAlpha = 1;
@@ -778,6 +829,9 @@
     requestDraw();
     document.getElementById('shapeCount').textContent =
       state.shapes.length + (state.shapes.length === 1 ? ' shape' : ' shapes');
+    document.getElementById('undo').disabled = !undoStack.length;
+    document.getElementById('redo').disabled = !redoStack.length;
+    if (!state.shapes.length) closeClearPrompt();
     saveSoon();
   }
 
@@ -1502,7 +1556,8 @@
   };
 
   window.addEventListener('keydown', (e) => {
-    if (e.target instanceof HTMLInputElement) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    if (e.key === 'Escape' && closeClearPrompt()) { e.preventDefault(); return; }
     // Space picks a tool now, so stop the browser scrolling the page or
     // re-clicking whichever button still holds focus.
     if (e.key === ' ') e.preventDefault();
@@ -1543,8 +1598,8 @@
       return;
     }
     if (TOOL_KEYS[k]) { setTool(TOOL_KEYS[k]); return; }
-    if (k >= '1' && k <= '9') { setColor(PALETTE[+k - 1]); return; }
-    if (k === '0') { setColor(PALETTE[9]); return; }
+    if (k >= '1' && k <= '9') { setColor(currentColors()[+k - 1]); return; }
+    if (k === '0') { setColor(currentColors()[9]); return; }
     if (k === '[') { setWidth(state.width - (state.width > 12 ? 4 : 1)); return; }
     if (k === ']') { setWidth(state.width + (state.width >= 12 ? 4 : 1)); return; }
     if (k === 'g') { toggle('grid'); return; }
@@ -1593,9 +1648,12 @@
     saveSoon();
   }
 
-  function setColor(hex) {
+  function setColor(raw, quiet) {
+    const hex = normHex(raw);
+    if (!hex) return;
     state.color = hex;
     for (const b of document.querySelectorAll('.swatch')) b.classList.toggle('on', b.dataset.color === hex);
+    syncMixer(quiet);
     if (selected && selected.color !== hex) {
       const next = Object.assign({}, selected, { color: hex });
       replaceShapes(state.shapes.map((sh) => (sh === selected ? next : sh)));
@@ -1696,15 +1754,208 @@
     if (b) setTool(b.dataset.tool);
   });
 
+  /* ---------------- palette ---------------- */
+
   const swatchWrap = document.getElementById('swatches');
-  PALETTE.forEach((hex, idx) => {
-    const b = document.createElement('button');
-    b.className = 'swatch';
-    b.dataset.color = hex;
-    b.title = `${hex} — ${idx === 9 ? 0 : idx + 1}`;
-    b.innerHTML = `<span style="background:${hex}"></span>`;
-    b.addEventListener('click', () => setColor(hex));
-    swatchWrap.appendChild(b);
+  const palSel = document.getElementById('palSel');
+  const palNameRow = document.getElementById('palNameRow');
+  const palNameInput = document.getElementById('palName');
+  const palDelBtn = document.getElementById('palDel');
+  const hexInput = document.getElementById('hexInput');
+  const hexPick = document.getElementById('hexPick');
+  const mixPreview = document.getElementById('mixInk');
+  const alphaInput = document.getElementById('alpha');
+  const alphaVal = document.getElementById('alphaVal');
+
+  let delArmed = 0;
+
+  function ownPalette(name) {
+    return state.palettes.find((p) => p.name === name) || null;
+  }
+  function activePalette() {
+    return ownPalette(state.palette)
+      || BUILT_IN.find((p) => p.name === state.palette)
+      || BUILT_IN[0];
+  }
+  function currentColors() { return activePalette().colors; }
+  function isMine() { return !!ownPalette(state.palette); }
+
+  function freeName(base) {
+    const taken = (n) => BUILT_IN.some((p) => p.name === n) || !!ownPalette(n);
+    if (!taken(base)) return base;
+    for (let i = 2; ; i++) if (!taken(`${base} ${i}`)) return `${base} ${i}`;
+  }
+
+  function buildPalettePicker() {
+    palSel.innerHTML = '';
+    const mk = (label, list) => {
+      if (!list.length) return;
+      const g = document.createElement('optgroup');
+      g.label = label;
+      for (const p of list) {
+        const o = document.createElement('option');
+        o.value = p.name;
+        o.textContent = `${p.name} · ${p.colors.length}`;
+        g.appendChild(o);
+      }
+      palSel.appendChild(g);
+    };
+    mk('Built in', BUILT_IN);
+    mk('Yours', state.palettes);
+    palSel.value = activePalette().name;
+    palDelBtn.disabled = !isMine();
+    disarmDelete();
+  }
+
+  function buildSwatches() {
+    const mine = isMine();
+    swatchWrap.innerHTML = '';
+    currentColors().forEach((hex, idx) => {
+      const b = document.createElement('button');
+      b.className = 'swatch';
+      b.dataset.color = hex;
+      const a = alphaOf(hex);
+      const key = idx < 10 ? ` — ${idx === 9 ? 0 : idx + 1}` : '';
+      b.title = hex + (a < 255 ? ` (${Math.round((a / 255) * 100)}%)` : '') + key;
+      b.innerHTML = `<span class="well chk"><i style="background:${hex}"></i></span>`
+        + (mine ? '<i class="kill" title="Remove this colour">\u00d7</i>' : '');
+      b.addEventListener('click', (e) => {
+        if (e.target.classList.contains('kill')) { dropSwatch(idx); return; }
+        setColor(hex);
+      });
+      swatchWrap.appendChild(b);
+    });
+    for (const b of swatchWrap.children) b.classList.toggle('on', b.dataset.color === state.color);
+  }
+
+  // The mixer always shows the ink in hand — except the hex field while
+  // it is being typed into, which would fight the cursor.
+  function syncMixer(quiet) {
+    const hex = state.color;
+    const a = alphaOf(hex);
+    mixPreview.style.background = hex;
+    hexPick.value = rgbOf(hex);
+    alphaInput.value = Math.round((a / 255) * 100);
+    alphaVal.textContent = alphaInput.value;
+    if (!quiet && document.activeElement !== hexInput) {
+      hexInput.value = hex;
+      hexInput.classList.remove('bad');
+    }
+  }
+
+  function usePalette(name) {
+    state.palette = activePaletteName(name);
+    buildPalettePicker();
+    buildSwatches();
+    saveSoon();
+  }
+  function activePaletteName(name) {
+    return (ownPalette(name) || BUILT_IN.find((p) => p.name === name) || BUILT_IN[0]).name;
+  }
+
+  function addSwatch() {
+    const hex = state.color;
+    let pal = ownPalette(state.palette);
+    if (!pal) {
+      // Built-ins stay as printed; take a copy and add to that instead.
+      pal = { name: freeName('My ' + state.palette), colors: currentColors().slice() };
+      state.palettes.push(pal);
+      state.palette = pal.name;
+      buildPalettePicker();
+      flash(`Copied into “${pal.name}”`);
+    }
+    if (pal.colors.includes(hex)) { buildSwatches(); return flash('Already in the palette'); }
+    if (pal.colors.length >= 40) return flash('That palette is full');
+    pal.colors.push(hex);
+    buildPalettePicker();
+    buildSwatches();
+    saveSoon();
+  }
+
+  function dropSwatch(idx) {
+    const pal = ownPalette(state.palette);
+    if (!pal || pal.colors.length <= 1) return flash('A palette keeps at least one colour');
+    pal.colors.splice(idx, 1);
+    buildPalettePicker();
+    buildSwatches();
+    saveSoon();
+  }
+
+  function openNameRow() {
+    palNameRow.hidden = false;
+    palNameInput.value = freeName('My palette');
+    palNameInput.focus();
+    palNameInput.select();
+  }
+  function closeNameRow() { palNameRow.hidden = true; }
+
+  function saveNewPalette() {
+    const name = palNameInput.value.trim().slice(0, 22);
+    if (!name) { palNameInput.focus(); return flash('Give the palette a name'); }
+    const pal = { name: freeName(name), colors: currentColors().slice() };
+    state.palettes.push(pal);
+    state.palette = pal.name;
+    closeNameRow();
+    buildPalettePicker();
+    buildSwatches();
+    saveSoon();
+    flash(`Palette “${pal.name}” saved`);
+  }
+
+  function disarmDelete() {
+    clearTimeout(delArmed);
+    palDelBtn.classList.remove('armed');
+    palDelBtn.textContent = 'Del';
+  }
+
+  function deletePalette() {
+    const pal = ownPalette(state.palette);
+    if (!pal) return;
+    if (!palDelBtn.classList.contains('armed')) {
+      palDelBtn.classList.add('armed');
+      palDelBtn.textContent = 'Sure?';
+      delArmed = setTimeout(disarmDelete, 3000);
+      return;
+    }
+    state.palettes = state.palettes.filter((p) => p !== pal);
+    state.palette = (state.palettes[0] || BUILT_IN[0]).name;
+    disarmDelete();
+    buildPalettePicker();
+    buildSwatches();
+    saveSoon();
+    flash(`Palette “${pal.name}” deleted`);
+  }
+
+  palSel.addEventListener('change', () => usePalette(palSel.value));
+  document.getElementById('palNew').addEventListener('click', () => {
+    if (palNameRow.hidden) openNameRow(); else closeNameRow();
+  });
+  document.getElementById('palSave').addEventListener('click', saveNewPalette);
+  document.getElementById('palCancel').addEventListener('click', closeNameRow);
+  palNameInput.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); saveNewPalette(); }
+    if (e.key === 'Escape') { e.preventDefault(); closeNameRow(); }
+  });
+  palDelBtn.addEventListener('click', deletePalette);
+  document.getElementById('addSwatch').addEventListener('click', addSwatch);
+
+  hexInput.addEventListener('input', () => {
+    const hex = normHex(hexInput.value);
+    hexInput.classList.toggle('bad', !hex && hexInput.value.trim() !== '');
+    if (hex) setColor(hex, true);
+  });
+  hexInput.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); hexInput.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); hexInput.blur(); }
+  });
+  hexInput.addEventListener('blur', () => { hexInput.classList.remove('bad'); syncMixer(); });
+  hexPick.addEventListener('input', () => setColor(withAlpha(hexPick.value, alphaOf(state.color))));
+
+  alphaInput.addEventListener('input', () => {
+    alphaVal.textContent = alphaInput.value;
+    setColor(withAlpha(state.color, (+alphaInput.value / 100) * 255));
   });
 
   document.getElementById('width').addEventListener('input', (e) => setWidth(+e.target.value));
@@ -1793,13 +2044,34 @@
 
   document.getElementById('undo').addEventListener('click', undo);
   document.getElementById('redo').addEventListener('click', redo);
-  document.getElementById('resetView').addEventListener('click', resetView);
-  document.getElementById('clear').addEventListener('click', () => {
+  /* Clearing asks first, in the rail — a browser box would take the
+     focus away from the drawing and looks nothing like the rest. */
+  const clearBtn = document.getElementById('clear');
+  const clearPrompt = document.getElementById('clearConfirm');
+
+  function closeClearPrompt() {
+    if (clearPrompt.hidden) return false;
+    clearPrompt.hidden = true;
+    clearBtn.hidden = false;
+    return true;
+  }
+
+  clearBtn.addEventListener('click', () => {
     const dropped = cancelDraft();
     selected = null;
+    requestDraw();
     if (!state.shapes.length) {
       return flash(dropped ? 'Unfinished mark dropped' : 'The tile is already empty');
     }
+    const n = state.shapes.length;
+    document.getElementById('clearCount').textContent = `(${n} ${n === 1 ? 'mark' : 'marks'})`;
+    clearPrompt.hidden = false;
+    clearBtn.hidden = true;
+    document.getElementById('clearNo').focus();
+  });
+  document.getElementById('clearNo').addEventListener('click', closeClearPrompt);
+  document.getElementById('clearYes').addEventListener('click', () => {
+    closeClearPrompt();
     replaceShapes([]);
     flash('Tile cleared — ⌘Z brings it back');
   });
@@ -1857,16 +2129,17 @@
       for (const s of paintOrder(state.shapes)) {
         const d = pathData(s);
         if (!d) continue;
-        if (s.layer === 'fill') body.push(`<path d="${d}" fill="${s.color}" fill-rule="evenodd"/>`);
-        else if (s.filled) body.push(`<path d="${d}" fill="${s.color}"/>`);
+        if (s.layer === 'fill') body.push(`<path d="${d}" ${svgPaint('fill', s.color)} fill-rule="evenodd"/>`);
+        else if (s.filled) body.push(`<path d="${d}" ${svgPaint('fill', s.color)}/>`);
         else {
           const [cap, join] = capsOf(s.kind);
-          body.push(`<path d="${d}" fill="${s.fillColor || 'none'}" stroke="${s.color}"`
+          const inner = s.fillColor ? svgPaint('fill', s.fillColor) : 'fill="none"';
+          body.push(`<path d="${d}" ${inner} ${svgPaint('stroke', s.color)}`
             + ` stroke-width="${s.width}" stroke-linecap="${cap}" stroke-linejoin="${join}"/>`);
           if (ROUNDABLE[s.kind]) {
             for (const p of endpointsOf(s)) {
               if (!junctions.has(jkey(p))) continue;
-              body.push(`<circle cx="${p.x}" cy="${p.y}" r="${s.width / 2}" fill="${s.color}"/>`);
+              body.push(`<circle cx="${p.x}" cy="${p.y}" r="${s.width / 2}" ${svgPaint('fill', s.color)}/>`);
             }
           }
         }
@@ -1907,6 +2180,7 @@
         localStorage.setItem(KEY, JSON.stringify({
           shapes: state.shapes, pattern: state.pattern, tool: state.tool,
           color: state.color, width: state.width, filled: state.filled,
+          palette: state.palette, palettes: state.palettes,
           grid: state.grid, clip: state.clip, wrap: state.wrap,
           snap: state.snap, sub: state.sub, diag: state.diag,
         }));
@@ -1926,7 +2200,18 @@
     }
     if (d.pattern && d.pattern.n >= 1 && d.pattern.n <= 4 && Array.isArray(d.pattern.cells)
         && d.pattern.cells.length === d.pattern.n * d.pattern.n) state.pattern = d.pattern;
-    if (PALETTE.includes(d.color)) state.color = d.color;
+    if (Array.isArray(d.palettes)) {
+      state.palettes = d.palettes
+        .filter((p) => p && typeof p.name === 'string' && Array.isArray(p.colors))
+        .slice(0, 40)
+        .map((p) => ({
+          name: p.name.slice(0, 22),
+          colors: p.colors.map(normHex).filter(Boolean).slice(0, 40),
+        }))
+        .filter((p) => p.name && p.colors.length);
+    }
+    if (typeof d.palette === 'string') state.palette = d.palette;
+    if (normHex(d.color)) state.color = normHex(d.color);
     if (typeof d.width === 'number') state.width = clamp(d.width, 1, 64);
     for (const f of ['filled', 'grid', 'clip', 'wrap', 'snap']) {
       if (typeof d[f] === 'boolean') state[f] = d[f];
@@ -1944,6 +2229,8 @@
   setDiag(state.diag, true);
   setSub(state.sub);
   setTool(state.tool);
+  buildPalettePicker();
+  buildSwatches();
   setColor(state.color);
   setWidth(state.width);
   syncToggles();

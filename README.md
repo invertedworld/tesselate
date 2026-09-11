@@ -26,7 +26,7 @@ then click again to set it.** Releasing the first click does not finish the
 mark — it stays live and follows the cursor until the second click, and
 `Esc` drops it. Dragging in one motion still works if you prefer it.
 
-| Instrument | |
+| Tool | |
 |---|---|
 | **Select** `Space` | Click a mark to pick it up, drag to move it. Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
 | **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Held drag only, and it ignores the grid entirely |
@@ -81,11 +81,35 @@ to carry across the seam.
 
 *Solid shapes* fills circles and rectangles instead of outlining them.
 
-Ink `1`–`9`,`0` · weight `[` `]` · undo/redo `⌘Z` / `⇧⌘Z` · recentre `H` ·
-tile rules `G` · clip `K` · wrap `W` · snap `S` · subdivide `D`
+Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
+undo/redo `⌘Z` / `⇧⌘Z` · recentre `H` · tile rules `G` · clip `K` ·
+wrap `W` · snap `S` · subdivide `D`
+
+*Clear* asks before it goes ahead, in the rail rather than in a browser box —
+and `⌘Z` brings the marks back even after that.
 
 Pan by two-finger scrolling, middle/right-dragging, or dragging empty space
 with the select tool.
+
+## Palette
+
+Three palettes come with the table — **Riso**, **Bauhaus** and **Graphite**,
+fifteen colours each — and you can keep as many of your own as you like.
+
+Under the swatches is the mixer: a **hex field** that takes any of `#rrggbb`,
+`#rgb`, `#rrggbbaa` or `#rgba`, with or without the `#`, and an eyedropper
+button for the system colour picker. **Alpha** sets how far through the ink
+you can see; a colour keeps its short form while it is solid and gains the
+extra two digits the moment it is not, so the swatch and the field always
+agree. Translucent ink is real ink: it fills, strokes, exports and layers like
+any other, and every well is drawn over a check so you can see what is left of
+the paper.
+
+**+** puts the colour in hand into the palette. The three built-ins are as
+printed, so adding to one takes a copy first — *My Riso*, say — and adds it
+there. **New** names a palette of your own starting from whatever is on screen;
+a swatch in one of yours has a **×** on hover; **Del** asks once, then removes
+the palette. Your palettes are kept with the drawing.
 
 ## The alignment grid
 
