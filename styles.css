@@ -628,30 +628,6 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 16px; border: 0; bor
 #stage.grabbable { cursor: move; }
 #stage.dropping { cursor: crosshair; }
 
-.hud {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 14px 18px;
-  pointer-events: none;
-  display: flex;
-  justify-content: center;
-}
-.hud-line {
-  font-size: 9.5px;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--ink-42);
-  background: rgba(250, 247, 239, 0.82);
-  border: 1px solid var(--ink-12);
-  padding: 5px 11px;
-  border-radius: 2px;
-  backdrop-filter: blur(2px);
-  transition: color 0.2s ease;
-}
-.hud-line.live { color: var(--ink); border-color: var(--ink-22); }
-
 @media (max-width: 820px) {
   body { flex-direction: column-reverse; }
   .rail { width: 100%; flex: 0 0 auto; max-height: 46%; border-right: 0; border-top: 1px solid var(--ink-22); }

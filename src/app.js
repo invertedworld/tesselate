@@ -2285,8 +2285,13 @@
   /* ---------------- ui ---------------- */
 
   let hintTimer = 0;
+  /* The running commentary along the bottom is gone. Every tool still
+     says what it did; there is simply nowhere on the plane for it to be
+     said, so it is said to no one. Keeping the call sites means the day
+     somewhere is wanted for it, they all still work. */
   function setHint(text, live) {
     clearTimeout(hintTimer);
+    if (!hintEl) return;
     hintEl.textContent = text;
     hintEl.classList.toggle('live', !!live);
   }
