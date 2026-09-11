@@ -480,23 +480,95 @@ function anchorOf(s) {
 }
 
 /* ---- The 45 degree frame ---------------------------------------
-   A drafting frame turned an eighth of a turn. The lattice it snaps
-   to is the square lattice plus its cell centres, which is the same
-   diamond lattice you get by turning the grid 45 degrees — and it
-   still repeats exactly every T, so marks placed on it meet across
-   the tile seam.
+   The isometric frame. Three families of lines a sixth of a turn
+   apart — upright, and thirty degrees either side of level — so every
+   step from a lattice point is the same length whichever of the six
+   ways it goes. That is the thing a square lattice cannot do: a step
+   along its diagonal is √2 of a step along its side, turned or not.
+
+   The upright lines are the tile's own columns, T/n apart, so they
+   land on its edges. The rows they carry cannot also divide T: a
+   triangular lattice and a square tile have no common measure. So
+   this frame is a drafting aid within the square rather than
+   something that repeats across the seam.
    ---------------------------------------------------------------- */
 
-const DIAG = Math.SQRT1_2;
+const ISO_ROW = 2 / Math.sqrt(3);      // row step, measured in columns
 
-const toDiag = (p) => ({ x: (p.x + p.y) * DIAG, y: (p.y - p.x) * DIAG });
-const fromDiag = (p) => ({ x: (p.x - p.y) * DIAG, y: (p.x + p.y) * DIAG });
+// Lattice points are i*(w, h/2) + j*(0, h): columns w apart, every
+// other column dropped half a row, which is what makes the triangles.
+function isoBasis(n) {
+  const w = T / n;
+  return { w, h: w * ISO_ROW };
+}
 
-function snapDiag(p, n) {
-  const d = T / n;
-  const u = Math.round((p.x + p.y) / d);
-  const v = Math.round((p.x - p.y) / d);
-  return { x: ((u + v) * d) / 2, y: ((u - v) * d) / 2 };
+// The six ways out of a lattice point, all the same length.
+function isoDirs(n) {
+  const { w, h } = isoBasis(n);
+  return [
+    { x: w, y: h / 2 }, { x: 0, y: h }, { x: -w, y: h / 2 },
+    { x: -w, y: -h / 2 }, { x: 0, y: -h }, { x: w, y: -h / 2 },
+  ];
+}
+
+function snapIso(p, n) {
+  const { w, h } = isoBasis(n);
+  const i = p.x / w;
+  let best = null, bd = Infinity;
+  // The cell is a rhombus, so the nearest point is one of its corners:
+  // the two columns either side, and a row either side of each.
+  for (const ii of [Math.floor(i), Math.ceil(i)]) {
+    const jr = p.y / h - ii / 2;
+    for (const jj of [Math.floor(jr), Math.ceil(jr)]) {
+      const q = { x: ii * w, y: (jj + ii / 2) * h };
+      const d = (q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y);
+      if (d < bd) { bd = d; best = q; }
+    }
+  }
+  return best;
+}
+
+/* The rhombus a corner-to-corner drag makes on this frame. The drag
+   lies in one of the six wedges between neighbouring directions; those
+   two are its sides, which is why every box drawn this way is a face of
+   an isometric cube. The far corner stays under the cursor. */
+function isoRhombus(a, b, n) {
+  const dirs = isoDirs(n);
+  const vx = b.x - a.x, vy = b.y - a.y;
+  for (let k = 0; k < 6; k++) {
+    const u = dirs[k], t = dirs[(k + 1) % 6];
+    const det = u.x * t.y - u.y * t.x;
+    if (!det) continue;
+    const s = (vx * t.y - vy * t.x) / det;
+    const r = (u.x * vy - u.y * vx) / det;
+    if (s < -1e-9 || r < -1e-9) continue;
+    return [
+      { x: a.x, y: a.y },
+      { x: a.x + u.x * s, y: a.y + u.y * s },
+      { x: a.x + vx, y: a.y + vy },
+      { x: a.x + t.x * r, y: a.y + t.y * r },
+    ];
+  }
+  return [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+}
+
+// Hold a run to one of the six ways out, a whole number of steps along.
+function isoRun(a, w, n, quantise) {
+  const dirs = isoDirs(n);
+  const vx = w.x - a.x, vy = w.y - a.y;
+  const len = Math.hypot(vx, vy);
+  if (len < 1e-9) return { x: a.x, y: a.y };
+  let best = dirs[0], bd = -Infinity;
+  for (const d of dirs) {
+    const dl = Math.hypot(d.x, d.y);
+    const dot = (vx * d.x + vy * d.y) / dl;
+    if (dot > bd) { bd = dot; best = d; }
+  }
+  const step = Math.hypot(best.x, best.y);
+  const ux = best.x / step, uy = best.y / step;
+  const along = Math.max(0, vx * ux + vy * uy);
+  const q = quantise ? Math.max(step, Math.round(along / step) * step) : along;
+  return { x: a.x + ux * q, y: a.y + uy * q };
 }
 
 /* Tidy a freehand stroke: drop the points that carry no shape, then

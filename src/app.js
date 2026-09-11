@@ -85,7 +85,7 @@
               that stays square
        plane  the whole plane turns instead, tiles and rules with it,
               so a tile-aligned square reads as a diamond on screen */
-  const DIAG_MODES = [['off', 'Off'], ['grid', 'Grid'], ['plane', 'Plane']];
+  const DIAG_MODES = [['off', 'Square'], ['grid', 'Iso'], ['plane', '45°']];
   const diagGrid = () => state.diag === 'grid';
 
   /* Straight geometry gets flat ends so a stroke stops exactly where it
@@ -364,7 +364,7 @@
   }
 
   const snapping = () => state.snap && !altHeld;
-  const latticeAt = (p) => (diagGrid() ? snapDiag(p, effSub()) : snapPoint(p, effSub()));
+  const latticeAt = (p) => (diagGrid() ? snapIso(p, effSub()) : snapPoint(p, effSub()));
 
   /* Marks already on the tile are snap targets in their own right: the
      ends and middles of lines and arcs, the centres and rims of circles,
@@ -732,6 +732,16 @@
     latticePass(state.sub, 1, SUB_RULE, hair);
   }
 
+  // y = m·x + c, cut to the tile square.
+  function clipHair(m, c, hair) {
+    const cut = (y) => (y - c) / m;
+    let x0 = 0, y0 = c, x1 = T, y1 = m * T + c;
+    if (y0 < 0) { x0 = cut(0); y0 = 0; } else if (y0 > T) { x0 = cut(T); y0 = T; }
+    if (y1 < 0) { x1 = cut(0); y1 = 0; } else if (y1 > T) { x1 = cut(T); y1 = T; }
+    if (x1 - x0 < 1e-6 || x0 < -1e-6 || x1 > T + 1e-6) return;
+    hair(x0, y0, x1, y1);
+  }
+
   function latticePass(n, skip, colour, hair) {
     const cell = T / n;
     ctx.lineWidth = 1;
@@ -739,17 +749,20 @@
     ctx.beginPath();
 
     if (diagGrid()) {
-      // The two 45° families, cut exactly at the tile edge: x + y = c
-      // runs corner to corner, and x - y = c likewise.
-      for (let k = 1; k < 2 * n; k++) {
-        if (skip > 1 && k % skip === 0) continue;
-        const c = k * cell;
-        hair(Math.max(0, c - T), Math.min(T, c), Math.min(T, c), Math.max(0, c - T));
+      const { w, h } = isoBasis(n);
+      const slope = h / (2 * w);          // a thirty degree rise
+      const drop = (k) => (skip > 1 && ((k % skip) + skip) % skip === 0);
+      // Upright: the tile's own columns.
+      for (let i = 1; i < n; i++) {
+        if (drop(i)) continue;
+        hair(i * w, 0, i * w, T);
       }
-      for (let k = -(n - 1); k <= n - 1; k++) {
-        if (skip > 1 && k % skip === 0) continue;
-        const c = k * cell;
-        hair(Math.max(0, c), Math.max(0, -c), Math.min(T, T + c), Math.min(T, T - c));
+      // The two thirty degree families, y = ±slope·x + k·h, cut to the tile.
+      for (let k = Math.ceil((-slope * T) / h); k <= Math.floor(T / h); k++) {
+        if (!drop(k)) clipHair(slope, k * h, hair);
+      }
+      for (let k = 0; k <= Math.floor((T + slope * T) / h); k++) {
+        if (!drop(k)) clipHair(-slope, k * h, hair);
       }
       ctx.stroke();
       return;
@@ -944,6 +957,10 @@
      still lands on it: a whole cell along the axes, a cell's diagonal
      across them. */
   function endPoint(a, w) {
+    if (shiftHeld && diagGrid()) {
+      const n = effSub();
+      return isoRun(a, w, n || state.sub || 12, !!n && snapping());
+    }
     if (shiftHeld) {
       const p = snapAngle(a, w, Math.PI / 4);
       if (!snapping() || !state.sub) return p;
@@ -1040,17 +1057,25 @@
         draft.c = { x: (draft.a.x + draft.b.x) / 2, y: (draft.a.y + draft.b.y) / 2 };
         break;
       case 'poly': {
-        // The same corner-to-corner drag, done on the turned frame.
-        let a = toDiag(anchor), b = toDiag(snapping() ? snapAt(w) || w : w);
-        if (shiftHeld) {
-          const dx = b.x - a.x, dy = b.y - a.y;
-          const m = Math.max(Math.abs(dx), Math.abs(dy));
-          b = { x: a.x + (dx < 0 ? -m : m), y: a.y + (dy < 0 ? -m : m) };
+        /* The same corner-to-corner drag, read on the isometric frame:
+           the drag falls in one of the six wedges and the two
+           directions around it are the sides, so every box drawn here
+           is a face of a cube. Shift makes it a rhombus with equal
+           sides — the face itself rather than a panel of one. */
+        const n = effSub() || state.sub || 12;
+        let b = snapping() ? snapAt(w) || w : w;
+        let pts = isoRhombus(anchor, b, n);
+        if (shiftHeld && pts.length === 4) {
+          const la = dist(pts[0], pts[1]), lb = dist(pts[0], pts[3]);
+          const m = Math.max(la, lb);
+          const at = (p, len) => (len < 1e-9 ? p : {
+            x: pts[0].x + ((p.x - pts[0].x) * m) / len,
+            y: pts[0].y + ((p.y - pts[0].y) * m) / len,
+          });
+          const u = at(pts[1], la), v = at(pts[3], lb);
+          pts = [pts[0], u, { x: u.x + v.x - pts[0].x, y: u.y + v.y - pts[0].y }, v];
         }
-        draft.pts = [
-          fromDiag(a), fromDiag({ x: b.x, y: a.y }),
-          fromDiag(b), fromDiag({ x: a.x, y: b.y }),
-        ];
+        draft.pts = pts;
         break;
       }
       case 'rect': {
@@ -2027,7 +2052,7 @@
     cancelDraft();
     if (!quiet) {
       flash(mode === 'plane' ? 'Whole plane turned 45°'
-        : mode === 'grid' ? 'Alignment grid turned 45° · rectangles draw as diamonds'
+        : mode === 'grid' ? 'Isometric frame · every step the same length · boxes draw as cube faces'
         : 'Square again');
     }
     requestDraw();

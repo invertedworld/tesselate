@@ -37,10 +37,10 @@ mark — it stays live and follows the cursor until the second click, and
 |---|---|
 | **Select** `Space` | Click a mark to pick it up, drag to move it. **Shift-click** adds another to what you are holding, or puts it back down; a **two-finger sweep** takes everything in an area (see below). Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
 | **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Held drag only, and it ignores the grid entirely |
-| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. Hold `Shift` to hold it horizontal, vertical or to 45°; with a lattice up the length is quantised along that direction too |
+| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. Hold `Shift` to hold it horizontal, vertical or to 45° — to one of the six isometric ways out on the Iso frame; with a lattice up the length is quantised along that direction too |
 | **Arc** `A` | Two clicks for the ends, then move to bend it and click to set. Hold `Shift` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
 | **Circle** `C` | Click the centre, then click to set the radius; `Shift` quantises it |
-| **Rect** `R` | Click a corner, then the opposite one; `Shift` for a square |
+| **Rect** `R` | Click a corner, then the opposite one; `Shift` for a square. On the **Iso** frame it draws a rhombus instead — a face of a cube |
 | **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. Click a mark instead and it takes the current ink. Filling an area again recolours it in place, and an already-filled area can still be cut up by new lines and its parts filled separately |
 | **Erase** `E` | Click or drag across a mark to remove it |
 
@@ -216,18 +216,32 @@ closing in gives you finer places to put things — up to five levels, and never
 finer than the screen can show. Each level contains the one above it, so a mark
 placed close in still lines up with one placed far out.
 
-### Turn 45°
+### Frame
 
-Three ways to sit the work on the diagonal:
+Three frames to draft in:
 
-- **Off** — everything square.
-- **Grid** — only the drafting frame turns. The lattice becomes diamonds, marks
-  snap to it, and the rectangle tool draws diamonds, on a plane that stays
-  square. The diamond lattice is the square lattice plus its cell centres, so
-  it still repeats exactly every tile and marks placed on it meet across the
-  seam.
-- **Plane** — the whole plane turns instead: tiles, rules, lattice and every
-  mark together, so a tile-aligned square reads as a diamond on screen. Drawing
+- **Square** — the plain lattice, everything upright.
+- **Iso** — a triangular lattice: upright lines, and two families thirty
+  degrees either side of level. Every step out of a lattice point is the
+  **same length whichever of the six ways it goes**, which is the thing a
+  square lattice cannot do — a step along its diagonal is √2 of a step along
+  its side, turned or not. So a box drawn on it has edges that are actually
+  equal, and reads as a solid rather than as a drawing of one.
+
+  On this frame the rectangle tool draws a rhombus instead: the drag falls in
+  one of the six wedges and the two directions around it become its sides, so
+  every box you pull out is a face of a cube — three drags make one. `Shift`
+  makes the sides equal. `Shift` on a line or an arc holds it to one of the six
+  ways out, a whole number of steps along.
+
+  The upright lines are the tile's own columns, so they land on its edges; the
+  rows they carry cannot also divide the tile, because a triangular lattice and
+  a square have no common measure. This frame is a drafting aid within the
+  square rather than something that repeats across the seam — and it could not
+  be otherwise, since a quarter-turn does not carry a triangular lattice onto
+  itself.
+- **45°** — the whole plane turns instead: tiles, rules, lattice and every mark
+  together, so a tile-aligned square reads as a diamond on screen. Drawing
   works unchanged; the pointer is mapped back through the angle.
 
 *Snap to grid* (`S`) pulls new geometry onto the lattice **and onto the marks
