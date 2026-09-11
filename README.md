@@ -288,7 +288,9 @@ presets are stored relative to it.
 
 - **Tile rules** — the tile grid drawn across the plane, with the symmetry
   block's boundaries heavier. Display only
-- **Clip to tile** — off lets marks bleed over their neighbours and overlap
+- **Clip to tile** — on cuts every mark at the tile's edge. Off by default, so
+  a mark that runs past the seam bleeds over its neighbours and overlaps them,
+  which is usually what you want while drawing
 - **Wrap at edges** — a mark leaving one edge re-enters at the opposite one,
   for motifs that must run continuously
 - **Grid** / **Snap to grid** — the alignment lattice, above

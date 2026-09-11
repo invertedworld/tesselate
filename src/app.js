@@ -168,7 +168,7 @@
     palettes: [],       // the user's own named palettes
     filled: false,
     grid: true,
-    clip: true,
+    clip: false,
     wrap: false,
     snap: false,
     sub: 0,
