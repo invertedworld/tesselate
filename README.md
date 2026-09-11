@@ -67,7 +67,9 @@ Filling an area does one of two things:
 
 - If the area is exactly the inside of one closed mark, it becomes that mark's
   own interior — one object, with the border and the fill separately
-  recolourable by clicking either with the fill tool.
+  recolourable by clicking either with the fill tool. It is still a fill, and
+  is painted at fill depth: an area filled *inside* that mark goes on top of
+  it, not under.
 - If it was bounded by several marks — a triangle drawn as three lines, say —
   the fill is **grouped** with them. Picking up any member moves the whole
   group, and `Delete` removes it.

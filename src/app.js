@@ -620,7 +620,10 @@
           }
           for (const o of offs) {
             if (o[0] || o[1]) ctx.translate(o[0] * T, o[1] * T);
-            for (const sh of marks) paintShape(sh, hair);
+            for (const sh of marks) {
+              if (sh.inside) paintShape(sh.inside, hair, 'inside');
+              else paintShape(sh, hair, sh.fillColor ? 'outline' : undefined);
+            }
             if (o[0] || o[1]) ctx.translate(-o[0] * T, -o[1] * T);
           }
           ctx.restore();
@@ -649,7 +652,10 @@
     zoomEl.textContent = Math.round(scale * 100) + '%';
   }
 
-  function paintShape(s, hair) {
+  /* `part` paints one half of a mark that has both: 'inside' its own
+     interior, 'outline' its border. They go down at different depths —
+     see paintOrder — so the plane asks for them separately. */
+  function paintShape(s, hair, part) {
     const p = s === draft ? draftPath : pathOf(s);
     if (s.layer === 'fill') {
       ctx.fillStyle = s.color;
@@ -658,12 +664,11 @@
       ctx.fillStyle = s.color;
       ctx.fill(p);
     } else {
-      // A filled interior belongs to the mark itself, so it paints with
-      // it — under its own border, above whatever the mark sits on.
-      if (s.fillColor) {
+      if (s.fillColor && part !== 'outline') {
         ctx.fillStyle = s.fillColor;
         ctx.fill(p);
       }
+      if (part === 'inside') return;
       const [cap, join] = capsOf(s.kind);
       ctx.lineCap = cap;
       ctx.lineJoin = join;
@@ -712,7 +717,17 @@
       let u = units.get(k);
       if (!u) units.set(k, (u = { last: i, fills: [], strokes: [] }));
       if (i > u.last) u.last = i;
-      (s.layer === 'fill' ? u.fills : u.strokes).push(s);
+      if (s.layer === 'fill') u.fills.push(s);
+      else {
+        /* A mark's own interior is a fill and belongs at fill depth. It
+           used to be painted with the mark's border, which paintOrder
+           puts above every separate fill — so an area filled inside a
+           closed mark vanished under that mark's interior the moment it
+           was drawn, and clicking the same spot again did nothing
+           visible however many times you tried. */
+        if (s.fillColor && !s.filled) u.fills.push({ inside: s });
+        u.strokes.push(s);
+      }
     });
 
     for (const u of [...units.values()].sort((a, b) => a.last - b.last)) {
@@ -2933,15 +2948,20 @@
 
     const body = [];
     {
-      for (const s of paintOrder(state.shapes)) {
+      for (const entry of paintOrder(state.shapes)) {
+        // A mark's interior comes through on its own, at fill depth.
+        const s = entry.inside || entry;
         const d = pathData(s);
         if (!d) continue;
+        if (entry.inside) {
+          body.push(`<path d="${d}" ${svgPaint('fill', s.fillColor)}/>`);
+          continue;
+        }
         if (s.layer === 'fill') body.push(`<path d="${d}" ${svgPaint('fill', s.color)} fill-rule="evenodd"/>`);
         else if (s.filled) body.push(`<path d="${d}" ${svgPaint('fill', s.color)}/>`);
         else {
           const [cap, join] = capsOf(s.kind);
-          const inner = s.fillColor ? svgPaint('fill', s.fillColor) : 'fill="none"';
-          body.push(`<path d="${d}" ${inner} ${svgPaint('stroke', s.color)}`
+          body.push(`<path d="${d}" fill="none" ${svgPaint('stroke', s.color)}`
             + ` stroke-width="${s.width}" stroke-linecap="${cap}" stroke-linejoin="${join}"/>`);
           if (ROUNDABLE[s.kind]) {
             for (const p of endpointsOf(s)) {
