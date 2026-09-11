@@ -736,19 +736,29 @@
     return order;
   }
 
-  // A halo around the picked mark, plus a dashed box, on the home tile.
+  /* A halo around each picked mark, the marks put back over it, and a
+     dashed box round each — in three passes, not one mark at a time.
+     Putting a mark back has to follow the order the plane paints in: a
+     group holds a fill and the borders around it, and repainting them in
+     the order they sit in the list put the fill last, burying every
+     border it had. */
   function drawSelection() {
-    const shapes = moving ? moving.previews : heldMarks();
+    const shapes = (moving ? moving.previews : heldMarks()).filter(Boolean);
     if (!shapes.length) return;
-    for (const shape of shapes) drawOneSelection(shape);
+    const hair = 0.9 / state.view.scale;
+    for (const shape of shapes) inTileFrame(() => drawHalo(shape));
+    for (const entry of paintOrder(shapes)) {
+      inTileFrame(() => {
+        if (entry.inside) paintShape(entry.inside, hair, 'inside');
+        else paintShape(entry, hair, entry.fillColor ? 'outline' : undefined);
+      });
+    }
+    for (const shape of shapes) drawSelectionBox(shape);
   }
 
-  function drawOneSelection(shape) {
-    if (!shape) return;
-    const v = state.view;
-    const solid = shape.layer === 'fill' || shape.filled;
-    const pen = solid ? 0 : shape.width;
-
+  // The home square's own frame, where a mark's coordinates mean what
+  // they say.
+  function inTileFrame(draw) {
     ctx.save();
     applyView();
     const f = frameTile();
@@ -759,17 +769,27 @@
       ctx.rotate((tr * Math.PI) / 2);
       ctx.translate(-T / 2, -T / 2);
     }
+    draw();
+    ctx.restore();
+  }
+
+  function drawHalo(shape) {
+    const solid = shape.layer === 'fill' || shape.filled;
+    const pen = solid ? 0 : shape.width;
     const [cap, join] = capsOf(shape.kind);
     ctx.lineCap = cap;
     ctx.lineJoin = join;
     ctx.globalAlpha = 0.4;
     ctx.strokeStyle = rgbOf(shape.color) === ACCENT ? '#17160f' : ACCENT;
-    ctx.lineWidth = pen + 8 / v.scale;
+    ctx.lineWidth = pen + 8 / state.view.scale;
     ctx.stroke(pathOf(shape));
     ctx.globalAlpha = 1;
-    paintShape(shape, 0.9 / v.scale);   // put the mark back on top
-    ctx.restore();
+  }
 
+  function drawSelectionBox(shape) {
+    const v = state.view;
+    const solid = shape.layer === 'fill' || shape.filled;
+    const pen = solid ? 0 : shape.width;
     const b = shapeBBox(shape);
     if (!b) return;
     // Drawn as a quad through the transform so it stays around the mark
@@ -794,6 +814,7 @@
     ctx.stroke();
     ctx.restore();
   }
+
 
   function drawRules(R) {
     const n = state.pattern.n;

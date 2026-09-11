@@ -118,6 +118,10 @@ things in hand, Ungroup wants something bound.
 
 ### With something in hand
 
+What is in hand is haloed in vermilion and put back over the halo, each mark at
+the depth the plane paints it — a group holds a fill and the borders around it,
+and putting them back in list order buried the borders under the fill.
+
 The palette recolours it, arrow keys nudge it (`Shift` for a bigger step,
 one lattice cell at a time when snapping is on), `Delete` removes it and
 `Esc` lets it go — all of which act on the whole group if it is in one. Moving
