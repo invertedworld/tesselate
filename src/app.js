@@ -204,7 +204,7 @@
   const HOLD_HINT = {
     line: 'Move, then click to set the end · Esc to drop',
     curve: 'Move, then click to set the far end of the arc · Esc to drop',
-    circle: 'Move out, then click to set the radius · Esc to drop',
+    circle: 'Move, then click to set the far side · Esc to drop',
     rect: 'Move, then click to set the far corner · Esc to drop',
     poly: 'Move, then click to set the far corner · Esc to drop',
   };
@@ -217,7 +217,7 @@
     pencil: 'Pencil — draw freely inside the frame',
     line: 'Line — click each point in turn; Esc finishes · Shift holds it square or to 45°',
     curve: 'Arc — click the two ends, then click to set the bend',
-    circle: 'Circle — click the centre, then click to set the radius',
+    circle: 'Circle — drag rim to rim, or click each end · Shift draws from the centre',
     rect: 'Rectangle — click a corner, then the opposite one · Shift squares it',
     fill: 'Fill — click an enclosed area, or a mark to recolour it',
     erase: 'Erase — click or drag across a mark',
@@ -257,7 +257,9 @@
   let mode = null;     // 'draw' | 'pan' | 'pinch'
   let panFrom = null;
   let pinchFrom = null;
-  let anchor = null;        // the corner a rectangle is being drawn from
+  let anchor = null;        // the corner a rectangle is being drawn from,
+                            // or the point a circle was started at
+  let fromCentre = false;   // was Shift down when the circle was started?
   let picked = [];          // the marks the select tool is holding
   let lasso = null;         // the area being swept out with two fingers
   let moving = null;        // { index, preview, from, base } while dragging one
@@ -1110,6 +1112,14 @@
         draft = newStroke({ kind: 'curve', a: p, b: p, c: p });
         break;
       case 'circle':
+        /* Shift at the press grows the circle from its centre. Without
+           it the drag runs rim to rim, which is what pulling a circle
+           out of nothing reads as, and it puts the two points you place
+           on the shape itself rather than one of them in its middle.
+           The key is read off the press, not off `shiftHeld`, so it is
+           the state at the moment the circle began that decides. */
+        anchor = p;
+        fromCentre = !!(e && e.shiftKey);
         draft = newStroke({ kind: 'circle', c: p, r: 0, filled: state.filled });
         break;
       case 'rect':
@@ -1274,6 +1284,15 @@
         break;
       }
       case 'circle': {
+        if (!fromCentre) {
+          // Rim to rim: the press and the cursor are the two ends of a
+          // diameter, so both land on the circle and the centre falls
+          // where it must. Either end may snap like any other point.
+          const b = sp(w);
+          draft.c = { x: (anchor.x + b.x) / 2, y: (anchor.y + b.y) / 2 };
+          draft.r = dist(anchor, b) / 2;
+          break;
+        }
         let r = dist(draft.c, w);
         const hit = snapping() ? objectSnap(w) : null;
         if (hit) {
