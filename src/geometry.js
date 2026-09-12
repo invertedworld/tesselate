@@ -403,6 +403,55 @@ function snapPoint(p, n) {
    turn is applied to each of them — except an upright box, which cannot
    hold a turn at all: it becomes the four-cornered polygon the turn has
    just made of it. */
+/* Scale a mark about a point. Uniform only: an ellipse is not a shape
+   this can hold, so a circle has to come out a circle. The stroke keeps
+   the width it was given — how heavy a line is was a choice about the
+   mark, not about how big it is drawn. */
+function scaleShape(s, cx, cy, k) {
+  const mp = (p) => ({ x: cx + (p.x - cx) * k, y: cy + (p.y - cy) * k });
+  const out = Object.assign({}, s);
+  switch (s.kind) {
+    case 'path': case 'poly': out.pts = s.pts.map(mp); break;
+    case 'line': out.a = mp(s.a); out.b = mp(s.b); break;
+    case 'curve': out.a = mp(s.a); out.b = mp(s.b); out.c = mp(s.c); break;
+    case 'circle': out.c = mp(s.c); out.r = Math.abs(s.r * k); break;
+    case 'rect': {
+      const q0 = mp({ x: s.x, y: s.y });
+      const q1 = mp({ x: s.x + s.w, y: s.y + s.h });
+      out.x = Math.min(q0.x, q1.x); out.y = Math.min(q0.y, q1.y);
+      out.w = Math.abs(q1.x - q0.x); out.h = Math.abs(q1.y - q0.y);
+      break;
+    }
+    case 'region': out.loops = s.loops.map((l) => l.map(mp)); break;
+  }
+  return out;
+}
+
+/* Mirror a mark about a line through (cx, cy), across or down. A
+   rectangle mirrors to a rectangle, so unlike a turn it stays one. */
+function flipShape(s, cx, cy, axis) {
+  const mp = (p) => (axis === 'x'
+    ? { x: 2 * cx - p.x, y: p.y }
+    : { x: p.x, y: 2 * cy - p.y });
+  const out = Object.assign({}, s);
+  switch (s.kind) {
+    // A loop turned over runs the other way round; even-odd filling does
+    // not care, and neither does a stroke.
+    case 'path': case 'poly': out.pts = s.pts.map(mp); break;
+    case 'line': out.a = mp(s.a); out.b = mp(s.b); break;
+    case 'curve': out.a = mp(s.a); out.b = mp(s.b); out.c = mp(s.c); break;
+    case 'circle': out.c = mp(s.c); break;
+    case 'rect': {
+      const q0 = mp({ x: s.x, y: s.y });
+      const q1 = mp({ x: s.x + s.w, y: s.y + s.h });
+      out.x = Math.min(q0.x, q1.x); out.y = Math.min(q0.y, q1.y);
+      break;
+    }
+    case 'region': out.loops = s.loops.map((l) => l.map(mp)); break;
+  }
+  return out;
+}
+
 function rotateShape(s, cx, cy, ang) {
   const c = Math.cos(ang), n = Math.sin(ang);
   const mp = (p) => {
@@ -512,26 +561,46 @@ function anchorOf(s) {
    something that repeats across the seam.
    ---------------------------------------------------------------- */
 
-const ISO_ROW = 2 / Math.sqrt(3);      // row step, measured in columns
+const ISO_ROW = 2 / Math.sqrt(3);      // the row step that is equilateral
 
-// Lattice points are i*(w, h/2) + j*(0, h): columns w apart, every
-// other column dropped half a row, which is what makes the triangles.
-function isoBasis(n) {
-  const w = T / n;
-  return { w, h: w * ISO_ROW };
+/* Lattice points are i*(w, h/2) + j*(0, h): columns w apart, every
+   other column dropped half a row, which is what makes the triangles.
+
+   A row step of 2/√3 columns makes those triangles exactly equilateral
+   — and leaves the lattice unable to repeat. The tile is a whole number
+   of columns across but 0.866·n rows down, so every seam catches the
+   rows partway through a step and the plane does not meet itself. On a
+   tiling, repeating wins: the rows are laid a whole number to the tile,
+   at the count nearest that ratio, which is within one per cent of
+   equilateral from eight columns up and never worse than a sixth.
+
+   The columns have to come in pairs too. The thirty degree lines climb
+   half a row per column, so crossing a tile they climb n/2 rows — whole
+   only when n is even. An odd count is taken up to the next even one
+   rather than drawn knowing it cannot meet itself across the seam. */
+function isoBasis(n, skip) {
+  /* `skip` is how many times the zoom has halved the lattice. The finer
+     level has to be the picked one subdivided, not a lattice worked out
+     afresh for twice the count: the rows are rounded to fit the tile,
+     and twice a rounding is not the rounding of twice, so the two came
+     out crossing each other instead of nesting. */
+  const s = Math.max(1, skip || 1);
+  const cols = n + (n & 1);
+  const rows = Math.max(1, Math.round(cols / ISO_ROW));
+  return { w: T / (cols * s), h: T / (rows * s), cols: cols * s, rows: rows * s };
 }
 
 // The six ways out of a lattice point, all the same length.
-function isoDirs(n) {
-  const { w, h } = isoBasis(n);
+function isoDirs(n, skip) {
+  const { w, h } = isoBasis(n, skip);
   return [
     { x: w, y: h / 2 }, { x: 0, y: h }, { x: -w, y: h / 2 },
     { x: -w, y: -h / 2 }, { x: 0, y: -h }, { x: w, y: -h / 2 },
   ];
 }
 
-function snapIso(p, n) {
-  const { w, h } = isoBasis(n);
+function snapIso(p, n, skip) {
+  const { w, h } = isoBasis(n, skip);
   const i = p.x / w;
   let best = null, bd = Infinity;
   // The cell is a rhombus, so the nearest point is one of its corners:
@@ -551,8 +620,8 @@ function snapIso(p, n) {
    lies in one of the six wedges between neighbouring directions; those
    two are its sides, which is why every box drawn this way is a face of
    an isometric cube. The far corner stays under the cursor. */
-function isoRhombus(a, b, n) {
-  const dirs = isoDirs(n);
+function isoRhombus(a, b, n, skip) {
+  const dirs = isoDirs(n, skip);
   const vx = b.x - a.x, vy = b.y - a.y;
   for (let k = 0; k < 6; k++) {
     const u = dirs[k], t = dirs[(k + 1) % 6];
@@ -572,8 +641,8 @@ function isoRhombus(a, b, n) {
 }
 
 // Hold a run to one of the six ways out, a whole number of steps along.
-function isoRun(a, w, n, quantise) {
-  const dirs = isoDirs(n);
+function isoRun(a, w, n, quantise, skip) {
+  const dirs = isoDirs(n, skip);
   const vx = w.x - a.x, vy = w.y - a.y;
   const len = Math.hypot(vx, vy);
   if (len < 1e-9) return { x: a.x, y: a.y };

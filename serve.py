@@ -18,5 +18,5 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    print(f'Tessera on http://localhost:{port}/  (nothing cached)')
+    print(f'Tesselate on http://localhost:{port}/  (nothing cached)')
     http.server.test(HandlerClass=NoCache, port=port, bind='127.0.0.1')

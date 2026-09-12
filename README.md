@@ -1,4 +1,4 @@
-# Tessera
+# Tesselate
 
 A drawing table for tessellated patterns. You draw on one square tile; the plane
 around it repeats that tile forever, each copy given a quarter-turn by a symmetry
@@ -8,7 +8,7 @@ Everything is vector: the drawing is a list of paths, curves, circles and filled
 regions in tile coordinates, redrawn from those primitives at whatever zoom you
 are at. Nothing is stored as pixels, and `Save SVG` writes real geometry.
 
-**[Open the drawing table →](https://invertedworld.github.io/tessera/)**
+**[Open the drawing table →](https://invertedworld.github.io/tesselate/)**
 
 ![The table, with a filled triangle and an arc repeating under a pinwheel block](docs/screenshot.jpg)
 
@@ -44,13 +44,13 @@ right out before letting go counts as finishing it.
 
 | Tool | |
 |---|---|
-| **Select** `Space` | Click a mark to pick it up, drag to move it. **Shift-click** adds another to what you are holding, or puts it back down; a **two-finger sweep** takes everything in an area (see below). Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
+| **Select** `Space` | Click a mark to pick it up, drag to move it. `⌘A` picks up everything on the tile. **Shift-click** adds another to what you are holding, or puts it back down; a **two-finger sweep** takes everything in an area (see below). Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
 | **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Held drag only, and it ignores the grid entirely |
-| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. A line pulled out in one drag is a single line, not the start of a chain. Hold `Shift` to hold it horizontal, vertical or to 45° — to one of the six isometric ways out on the Iso frame; with a lattice up the length is quantised along that direction too |
-| **Arc** `A` | Two clicks for the ends — or one drag — then move to bend it and click to set. An arc owes its bend either way, so the drag sets the chord and hands it on to be bent. Hold `Shift` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
-| **Circle** `C` | Drag rim to rim, or click each end of a diameter — both points you place land on the circle. Hold `Shift` **as you start** to grow it from the centre instead: the first point is then the middle and the second sets the radius, quantised while `Shift` is down |
-| **Rect** `R` | Click a corner, then the opposite one; `Shift` for a square. On the **Iso** frame it draws a rhombus instead — a face of a cube |
-| **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. Click a mark instead and it takes the current ink. Filling an area again recolours it in place, and an already-filled area can still be cut up by new lines and its parts filled separately |
+| **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. A line pulled out in one drag is a single line, not the start of a chain. Hold `Alt` to hold it horizontal, vertical or to 45° — to one of the six isometric ways out on the Iso frame; with a lattice up the length is quantised along that direction too |
+| **Arc** `A` | Two clicks for the ends — or one drag — then move to bend it and click to set. An arc owes its bend either way, so the drag sets the chord and hands it on to be bent. Hold `Alt` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
+| **Circle** `C` | Drag rim to rim, or click each end of a diameter — both points you place land on the circle. Hold `Alt` **as you start** to grow it from the centre instead: the first point is then the middle and the second sets the radius |
+| **Rect** `R` | Click a corner, then the opposite one; `Alt` for a square. On the **Iso** frame it draws a rhombus instead — a face of a cube |
+| **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. On an empty tile there is nothing holding an area in, so the whole square fills, and it comes out as the ground. Click a mark instead and it takes the current ink. Filling an area again recolours it in place, and an already-filled area can still be cut up by new lines and its parts filled separately |
 | **Erase** `E` | Click or drag across a mark to remove it. A border answers before the interior of the mark holding it, and before a fill, so a line drawn across a filled shape can still be got at — and a mark can be rubbed out by any of its ink, including the part that has run over a neighbouring square |
 
 Straight geometry is stroked with **flat ends**, so a line stops exactly on
@@ -83,10 +83,6 @@ Filling an area does one of two things:
   the fill is **grouped** with them. Picking up any member moves the whole
   group, and `Delete` removes it.
 
-With *Wrap at edges* on the tile is a torus, and the fill wraps with it: a
-shape straddling the seam is one area and fills in a single click, on both
-sides.
-
 ### Picking things up
 
 Click a mark to hold it; **Shift-click** to add another, or to put one back
@@ -100,15 +96,22 @@ figure does not drag in the ground it sits on. Shift-drag keeps what you were
 already holding and adds to it; `Esc` part-way through drops the sweep and puts
 back what was in hand.
 
+A sweep belongs to the square it was started in, and the box **stops at that
+square's edge**: take the pointer past it and the box holds at the perimeter
+rather than following into a neighbour it could not pick anything up from.
+
 Because a drag now sweeps, the plane is panned with the select tool up by
 two-finger scrolling or a middle/right-drag rather than by dragging the paper.
 Pinch still zooms.
 
-**Turn 45°**, either way, turns what you are holding about the centre of what
-it makes together — so a figure of several marks keeps its shape instead of
-each mark spinning on its own spot. An upright box cannot hold a turn, so it
-becomes the four-cornered polygon the turn has just made of it, and carries on
-behaving like one.
+The four buttons under the tools all work on the whole of what you are holding,
+about the centre of what it makes together — so a figure of several marks keeps
+its shape instead of each mark moving on its own spot. **Turn** takes it 45°
+either way; an upright box cannot hold a turn, so it becomes the four-cornered
+polygon the turn has just made of it and carries on behaving like one. **Flip**
+mirrors it left to right or top to bottom, and a box mirrors to a box, so unlike
+a turn it stays one. They carry no caption: four glyphs read faster in a row
+than four labels, and the words are in the tooltips.
 
 **Cut** `⌘X`, **Copy** `⌘C` and **Paste** `⌘V` work on what you are holding.
 The marks go on the **real clipboard**, written as the same JSON a drawing is
@@ -125,6 +128,29 @@ several marks is grouped with them already — this is the same binding, by hand
 The two buttons under the tools say when they apply: Group wants two separate
 things in hand, Ungroup wants something bound.
 
+### Grips
+
+What you are holding gets a grip on each corner of its box. Drag one and the
+whole lot **sizes** about the corner opposite, so the one you are not holding
+stays where it is. It is one factor, not two — an ellipse is not a shape this
+can hold, so a circle has to come out a circle — read off whichever way the box
+has more room, and a stroke keeps the width it was given: how heavy a line is
+was a choice about the mark, not about how big it is drawn.
+
+Move the pointer a little **past** a corner and a turn ring appears there
+instead. Dragging it turns everything held about the middle of what it makes
+together, in **eighths of a turn** while snapping is on, any angle at all while
+it is off — and `Shift` flips whichever of those you are in. It only
+shows while the pointer is out there, so the box stays quiet the rest of the
+time.
+
+Hold a **single** line, arc or circle and it also gets grips on its own points:
+either end of a line, either end of an arc and its bend, and four on a circle's
+rim for the radius. The bend grip sits on the arc itself rather than on the
+control point, which is off the curve entirely and means nothing to the eye.
+Grips take the lattice like anything else drawn, so `Snap to grid and geometry`
+pulls them onto it.
+
 ### With something in hand
 
 What is in hand is haloed in vermilion, and the halo goes down **before** the
@@ -133,7 +159,7 @@ through them, and nothing has to be put back afterwards. Drawing it on top and
 repainting the held marks over it covered whatever else stood above them — a
 fill eating the border of the mark beside it.
 
-The palette recolours it, arrow keys nudge it (`Shift` for a bigger step,
+The palette recolours it, arrow keys nudge it (`Alt` for a bigger step,
 one lattice cell at a time when snapping is on), `Delete` removes it and
 `Esc` lets it go — all of which act on the whole group if it is in one. Moving
 a mark moves every copy of it, since there is only ever one shape — the plane
@@ -153,12 +179,89 @@ to carry across the seam.
 
 *Filled shapes* fills circles and rectangles instead of outlining them.
 
+**Recently mixed** is a strip of ten smaller slots under the palette. Ink you
+make rather than pick lands there on its own — a colour dimmed, a hex typed, a
+gradient built, anything taken with the eyedropper — newest first, one of each,
+and the eleventh pushes the oldest out. A colour already in the palette in hand
+is not recorded, since it is a click away as it is. It is written down a moment
+after the ink settles rather than the instant it changes: a drag of the alpha
+passes through forty colours on its way to the one that was wanted, and none of
+the forty is worth a slot. The empty slots are drawn, so the strip keeps its
+shape as it fills. It belongs to the table rather than to any one drawing, so
+it survives opening another, and *+* still adds to the palette proper.
+
+**Drag a colour from either strip to the other** and it lands there as a copy —
+the one you dragged stays where it was. Out of the recent slots into the
+palette is how a mixed colour is kept; out of the palette into the slots is how
+one is put within reach without being on the palette.
+
+A slot has a **×** on hover, the same as a palette swatch. The strip keeps
+itself — the eleventh colour pushes the oldest off the end — so that was not
+needed while everything in it arrived by being used; something dragged in on
+purpose should be removable on purpose rather than waiting for ten newer
+colours to shift it.
+
+It goes **where you drop it**, not on the end: a bar shows the place it would
+take, in front of the swatch nearest the pointer or behind it once you are past
+its middle. Dragging **within** a strip reorders it, since a colour already
+there is moved rather than doubled. Dropping over the empty tail of the recent
+slots puts it at the end of what is actually in them.
+
+### Gradients
+
+*Gradient* turns the ink into a fade from one colour to another. It applies to
+anything that takes ink — a fill, a solid shape, or a stroke along its length.
+Switching it on the first time runs from the ink you have to the same colour
+again, so nothing changes on the paper until you set the far stop; switching it
+off keeps the colour it started from, so the ink never jumps either way. After
+that it remembers the sweep, and switching it back on returns the angle, the
+anchor and the colour it faded to. The angle is degrees clockwise from east.
+
+*Across* decides what the sweep is measured over, and both choices repeat
+exactly:
+
+- **Mark** — each mark's own bounds, so every copy of it looks the same
+  wherever it lands on the plane.
+- **Tile** — the square, so a whole figure fades together across it.
+
+There is deliberately no sweep across the plane: the plane is infinite, so
+there is nothing for the stops to run between, and a drawing painted that way
+would stop being a tiling.
+
+A gradient is written as text, so it saves, keys a palette and goes on a swatch
+exactly the way a flat colour does — nothing else in the app has to know about
+a second kind of value:
+
+    lin(45,shape,#cf4326,#2b4a9c)
+
+Each end has its own colour field and its own alpha. The pair above the
+Gradient switch are the stop the sweep **starts** from — they are the ink
+itself, and read as such with the gradient off — and the pair inside the row
+are the one it ends at. The far alpha goes all the way to nothing, unlike the
+ink's: a fade that stopped just short would leave a visible edge where it
+ended, and the near stop is still there to find the mark by.
+
+Exported SVG carries a `<linearGradient>` def per sweep, in the tile's own
+coordinates, so one def serves every copy the sheet instances.
+
 Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
 undo/redo `⌘Z` / `⇧⌘Z` · cut/copy/paste `⌘X` `⌘C` `⌘V` ·
-group `G` / ungroup `U` (or `⌘G` / `⇧⌘G`) · eyedropper `I` · recentre `H` ·
-tile rules `T` · clip `K` · wrap `W` · snap `S` · subdivide `D`
+select all `⌘A` · group `G` / ungroup `U` (or `⌘G` / `⇧⌘G`) · eyedropper `I` ·
+recentre `H` ·
+show tiles `T` · snapping `S` · grid size `D`
+
+`Shift` suspends snapping, or asks for it while it is off · `Alt` (or `Ctrl`)
+constrains what a tool is drawing
 
 ### Off the table
+
+Everything the table itself does is a toolbar at the top of the rail: undo and
+redo, then the file — new, open, save, save as — then what comes off it: SVG,
+PNG, and PNG to the clipboard. Icons only, with the words in the tooltips, so
+the whole of it fits one row and the panels below can get on with the drawing.
+A little air marks off the three groups. Where there is no file picker the
+*Save as* button is not shown and the words change to *Download*, but the
+glyphs stay where they are.
 
 | | |
 |---|---|
@@ -170,21 +273,28 @@ tile rules `T` · clip `K` · wrap `W` · snap `S` · subdivide `D`
 
 ## The drawing as a file
 
-A saved `.json` holds the artwork and nothing else: the marks, the symmetry
-block they repeat under, and the three plane settings that change what the
-pattern looks like — clip, wrap and the 45° turn. Which tool is in hand, the
-lattice, the palette: none of that belongs to the drawing, so none of it is
-written.
+A saved `.json` holds the drawing and the bench it was made at: the marks, the
+symmetry block they repeat under, the grid it was drawn to, the ink in hand,
+and the colours mixed for it — which are no use to it sitting in another
+table's storage. Open it anywhere and it comes back set up the way it was left.
+
+What is *not* written is what belongs to the moment rather than to the picture:
+which tool is in hand, where the view is scrolled, how far it is zoomed.
+
+Everything is checked on the way back in, and anything a file does not carry is
+left as the table already has it, so drawings saved before this still open.
 
 It is meant to be read. One mark per line, so a drawing diffs like source:
 
     {
-     "format": "tessera",
+     "format": "tesselate",
      "version": 1,
      "saved": "2026-09-11T07:01:13.385Z",
      "tile": 1000,
      "pattern": {"n":2,"cells":[0,1,3,2]},
-     "plane": {"clip":true,"wrap":false,"diag":"off"},
+     "plane": {"grid":true,"snap":false,"sub":8,"subLast":8,"diag":"off"},
+     "ink": {"color":"#cf4326","width":9,"filled":false},
+     "palette": {"name":"Riso · 15","palettes":[…],"recent":[…]},
      "shapes": [
       {"id":1,"layer":"stroke","kind":"line","color":"#cf4326","width":9,"pts":[…]},
       {"id":2,"layer":"fill","color":"#2b4a9c40","loops":[[…]]}
@@ -201,13 +311,19 @@ first save after coming back may ask once for permission, then goes quiet.
 *Save as* always asks for a new place.
 
 **Elsewhere there is no picker at all**, so nothing can be written back over
-and the buttons stop pretending otherwise: they read **Download** and **Download
-as** on those browsers, and the exports beside them read Download SVG and
-Download PNG, because that is where all four end up. Download keeps offering
-the name it last used, which is as near as a download gets to writing back over
-something; Download as takes a fresh one. *Load* opens the ordinary file
-chooser. The file in play is named under the buttons, with a
+and the buttons stop pretending otherwise: *Save* reads **Download** on those
+browsers, and the exports beside it read Download SVG and Download PNG, because
+that is where all three end up. *Save as* goes altogether: with nowhere to
+write back to, every download is already a new file, so it would only do what
+Download does. Download keeps offering the name it last used, which is as near
+as a download gets to writing back over something. *Load* opens the ordinary
+file chooser. The file in play is named under the buttons, with a
 vermilion dot while the drawing has moved on since it was written.
+
+**New** puts the table back to how it starts: an empty tile, the default
+symmetry block, the default grid, ink and view. Anything a drawing carries is a
+setting *of* that drawing and goes with it — but your palettes and the recently
+mixed strip belong to the table rather than to any one picture, and stay put.
 
 Opening a drawing, or starting one, is a new session rather than an edit, so
 the **undo history goes** with it: the steps behind it belong to a picture that
@@ -233,24 +349,32 @@ units wide is half soft edge, and a pixel read off that edge is the mark's
 colour mixed with whatever is behind it, never the colour the mark is drawn in.
 Click a border and you get the border's colour, the inside of a closed mark and
 you get its interior's, a filled area and you get the fill's; click bare paper
-and it reads the canvas rather than the screen. **Alpha** sets how far through the ink
-you can see; a colour keeps its short form while it is solid and gains the
-extra two digits the moment it is not, so the swatch and the field always
-agree. Translucent ink is real ink: it fills, strokes, exports and layers like
-any other, and every well is drawn over a check so you can see what is left of
-the paper.
+and it reads the canvas rather than the screen. **Alpha** sets how far through
+the ink you can see, down to 1% — it stops there rather than at nothing, since
+ink you cannot see at all is a mark you can no longer find on the plane. A
+colour keeps its short form while it is solid and gains the extra two digits
+the moment it is not, so the swatch and the field always agree. Translucent ink
+is real ink: it fills, strokes, exports and layers like any other, and every
+well is drawn over a check so you can see what is left of the paper.
 
 **+** puts the colour in hand into the palette. The three built-ins are as
 printed, so adding to one takes a copy first — *My Riso*, say — and adds it
-there. **New** names a palette of your own starting from whatever is on screen;
-a swatch in one of yours has a **×** on hover; **Del** asks once, then removes
-the palette. Your palettes are kept with the drawing.
+there. **New** names a palette of your own and starts it **empty**: it is
+somewhere to put colours rather than another copy of the ones already to hand,
+and *+* and the recently mixed strip are where they come from. A swatch in one
+of yours has a **×** on hover, and a palette of yours may be emptied right out,
+since it can be made that way. The **pencil** renames one of yours — the
+built-ins keep their names — and **Del** asks once, then removes the palette.
+Your palettes are kept with the drawing.
 
 ## The alignment grid
 
-*Grid* lays an *n × n* lattice over the square you are working in — 2, 3, 4, 6,
-8, 12 or 16, cycled with `D`. It is a drafting aid and is independent of
-snapping: you can have the lattice without it pulling on anything.
+*Show grid* lays an *n × n* lattice over the square you are working in. Tick it
+to turn the lattice on; the sizes below it — 2, 3, 4, 6, 8, 12, 16, 32 or 64, cycled
+with `D` — are its own and go quiet while it is off. Switching it off keeps the
+size you were working to, so switching back on returns that rather than a
+default. It is a drafting aid and is independent of snapping: you can have the
+lattice without it pulling on anything.
 
 What you set is what you see at the fitted zoom. **Every doubling of the zoom
 halves the cells again**, drawn fainter than the lattice you asked for, so
@@ -258,22 +382,23 @@ closing in gives you finer places to put things — up to five levels, and never
 finer than the screen can show. Each level contains the one above it, so a mark
 placed close in still lines up with one placed far out.
 
-### Frame
+### Grid type
 
-Three frames to draft in:
+Three grids to draft on:
 
 - **Square** — the plain lattice, everything upright.
 - **Iso** — a triangular lattice: upright lines, and two families thirty
-  degrees either side of level. Every step out of a lattice point is the
-  **same length whichever of the six ways it goes**, which is the thing a
-  square lattice cannot do — a step along its diagonal is √2 of a step along
-  its side, turned or not. So a box drawn on it has edges that are actually
+  degrees either side of level. Every step out of a lattice point is **near
+  enough the same length whichever of the six ways it goes** — the six differ
+  by under 3% from six columns up, and under 1% at 8, 16, 32 and 64 — which is
+  the thing a square lattice cannot do at all: a step along its diagonal is √2
+  of a step along its side, turned or not. So a box drawn on it has edges that are actually
   equal, and reads as a solid rather than as a drawing of one.
 
   On this frame the rectangle tool draws a rhombus instead: the drag falls in
   one of the six wedges and the two directions around it become its sides, so
-  every box you pull out is a face of a cube — three drags make one. `Shift`
-  makes the sides equal. `Shift` on a line or an arc holds it to one of the six
+  every box you pull out is a face of a cube — three drags make one. `Alt`
+  makes the sides equal. `Alt` on a line or an arc holds it to one of the six
   ways out, a whole number of steps along.
 
   The lattice is ruled over every square, and **turned with each of them**: a
@@ -281,20 +406,63 @@ Three frames to draft in:
   and what is drawn has to be what a mark placed there would line up with. It
   is dropped when the squares get too small or too many for it to help.
 
-  The upright lines are the tile's own columns, so they land on its edges; the
-  rows they carry cannot also divide the tile, because a triangular lattice and
-  a square have no common measure. This frame is a drafting aid within the
-  square rather than something that repeats across the seam — and it could not
-  be otherwise, since a quarter-turn does not carry a triangular lattice onto
-  itself.
+  The upright lines are the tile's own columns, so they land on its edges, and
+  **the rows are laid a whole number to the tile as well**, so the lattice meets
+  itself across a seam. That is what costs the triangle its last few per cent:
+  exactly equilateral would put 0.866·n rows in the tile, which is never a whole
+  number, so the count is rounded to the nearest one. The columns are taken up
+  to an even number for the same reason — the thirty degree lines climb half a
+  row per column, so they only come back to a row after an even number of them.
+  Repeating is worth more than the last per cent of equilateral on a plane whose
+  whole subject is repetition; at 2, 3 and 4 columns the rounding is coarse
+  enough to see, around a sixth.
+
+  Across a **turned** square it still cannot match: a quarter-turn carries a
+  square lattice onto itself but not a triangular one. Where the block turns a
+  square the lattice turns with it, because what is drawn has to be what a mark
+  placed there would line up with.
 - **45°** — the whole plane turns instead: tiles, rules, lattice and every mark
   together, so a tile-aligned square reads as a diamond on screen. Drawing
   works unchanged; the pointer is mapped back through the angle.
 
-*Snap to grid* (`S`) pulls new geometry onto the lattice **and onto the marks
-already on the tile** — the ends and middles of lines and arcs, the centres and
-rims of circles, the corners of rectangles. A mark within reach of the cursor
-wins over the lattice, and snapping keeps working with the grid switched off.
+**A slider with something in hand works on what is held.** *Width* sets every
+stroke held, and *Alpha* changes how far you see through each of them while
+each keeps its own colour — setting them all to one colour is what picking a
+colour is for. A run of the slider is a single step to undo, not one per pixel
+of travel.
+
+*Snap to grid and geometry* (`S`), under the tools, pulls new geometry onto the
+lattice **and onto the marks already on the tile** — the ends and middles of
+lines and arcs, the centres and rims of circles, the corners of rectangles. A
+mark within reach of the cursor wins over the lattice, and snapping keeps
+working with the grid switched off.
+
+### The two modifiers
+
+Each has one job, everywhere.
+
+**Shift is snapping.** It suspends it where it is on, and asks for it where it
+is off — one key for *not this time* and *just this once* both. Everything that
+snaps follows it: the lattice, the marks already drawn, the coarse step a
+circle falls back on when there is no lattice, and the eighths of a turn the
+rotation grip steps in. The mark under the cursor is worked out again the
+moment the key moves, so you can see what you would get before pressing.
+
+**Alt — or Control — constrains.** Everything a tool can be asked to hold to
+while it is being drawn:
+
+| | |
+|---|---|
+| Line, arc | Horizontal, vertical or 45° — one of the six isometric ways out on the Iso frame |
+| Arc bend | The apex square above the middle of the chord, so the arc is symmetrical |
+| Rect | Squared off on the longer side |
+| Rect on **Iso** | Equal sides: the cube face itself rather than a panel of one |
+| Circle | Grown from its centre rather than rim to rim — read at the press, so letting go midway will not switch it |
+| Arrow keys | Five steps at a time instead of one |
+
+`Shift`-click still adds a mark to what you are holding, as does `⌘`-click.
+That is the ordinary way to build a selection and it does not collide with
+either job above, since nothing is being snapped while you pick things up.
 
 A red cross marks the point that has been caught. Targets are ranked rather
 than just measured: where several marks meet, their midpoints and rims crowd
@@ -320,12 +488,13 @@ Freehand ignores the lattice when drawing: the pencil never touches it.
 
 Snapping the ends to the tile edge is what makes a motif meet its own
 reflection cleanly across the seam, and it closes shapes reliably enough for
-the fill tool to find them. Hold `Alt` to ignore the lattice for one mark.
-`Shift` takes precedence over snapping: asking for a direction is the more
+the fill tool to find them. Hold `Shift` to suspend the lattice for one mark,
+or to ask for it while snapping is off.
+`Alt` takes precedence over snapping: asking for a direction is the more
 specific request, and the length is then quantised along it so the far end
 still lands on the lattice.
 
-The two switches are independent: setting *Grid* to `Off` leaves snapping on
+The two are independent: turning *Show grid* off leaves snapping on
 and working — it just falls back to the marks themselves.
 
 ## Symmetry
@@ -340,23 +509,37 @@ presets are stored relative to it.
 - **Rows** / **Columns** / **Checker** — half-turns in one direction or alternating
 - **Triple**, **Cascade**, **Windmill**, **Spin** — diagonal and 4×4 rotations
 
+**Show orientation** puts a small arrow in each square on the plane, pointing
+the way that square has been turned. A drawing under a block of quarter-turns
+reads as one figure, and it is easy to lose track of which square is which; the
+block above says it for the pattern, this says it on the work itself.
+
+The badge sits at the top left of each square **as drawn** and stays there: one
+carried round by the turn would land on a different corner every quarter,
+telling you the same thing twice and being harder to find for it. The arrow
+inside it does the turning. It is vermilion and heavy, because it is an answer
+to a question you are asking rather than part of the work — and it goes when
+the squares are too small to hold it, on the same reasoning as the lattice:
+too small to read is worse than absent, because it becomes noise along the
+rules.
+
 ## Plane
 
-- **Tile rules** — the tile grid drawn across the plane, with the symmetry
+- **Show tiles** — the tile grid drawn across the plane, with the symmetry
   block's boundaries heavier again. They read darker and thicker than the
   alignment lattice inside them, so the structure sits over the drafting aid
   rather than under it; where the squares are packed too close to carry a
   wider line they drop back to a hairline. Display only
-- **Clip to tile** — on cuts every mark at the tile's edge. Off by default, so
-  a mark that runs past the seam bleeds over its neighbours and overlaps them,
-  which is usually what you want while drawing. With it off the plane is
-  painted mark by mark across every square rather than square by square, so
-  depth means the same thing everywhere: finishing one square before starting
-  the next would put everything the next square draws over everything this one
-  drew, and a fill two squares along would land on a border already laid down
-- **Wrap at edges** — a mark leaving one edge re-enters at the opposite one,
-  for motifs that must run continuously
-- **Grid** / **Snap to grid** — the alignment lattice, above
+- **Show grid** and its sizes — the alignment lattice, above. *Snap to grid and
+  geometry* sits with the tools rather than here, since it changes how they draw
+
+A mark that runs past the seam bleeds over its neighbours and overlaps them,
+which is what you want while drawing: the plane is one drawing, not a sheet of
+separate squares. So it is painted mark by mark across every square rather than
+square by square, and depth means the same thing everywhere — finishing one
+square before starting the next would put everything the next square draws over
+everything this one drew, and a fill two squares along would land on a border
+already laid down.
 
 Pinch the trackpad to zoom; two-finger scroll or middle-drag to pan.
 Work is kept in `localStorage`, so the table is as you left it.
@@ -391,11 +574,16 @@ two the grid loses where that gap pinches shut, walks the boundary into closed
 loops and simplifies them.
 
 What goes into the grid is **everything the eye can see holding that area in**,
-not just the square's own marks. With clipping off a mark runs over its
-neighbours, so the squares around this one lay ink on it as well; each is drawn
+not just the square's own marks. A mark runs over its neighbours, so the
+squares around this one lay ink on it as well; each is drawn
 through its own quarter-turn and mapped back into this square's frame. Without
 that, an area enclosed by a neighbour's ink flooded straight out, because the
 flood had never been told about it.
+
+That has to reach past the edge of **the grid**, not the edge of the square.
+When the grid widens, the squares beyond the widened ring still run ink into
+it, and leaving them out left the barrier full of holes exactly where the flood
+was about to be judged on whether it had escaped.
 
 **How wide the grid is laid** answers the other half of that. An area held in
 partly by a neighbour's ink runs past the square's edge, and a fill that
@@ -406,6 +594,21 @@ Two cases are not areas that continue, and stay on the square: one meeting
 **all four** edges is the ground the marks sit on, and one still running at the
 wider grid was never enclosed at all — a mark the size of the square tiles,
 where one the size of three does not.
+
+All four edges only reads as the ground **on the square's own grid**. On the
+widened one it says the flood ran out to every edge of nine squares, which is
+the opposite of enclosed. Read as the ground there, that blob was kept: a fill
+clicked in a corner came back two and a half squares across, and its copies
+tiled over everything around them.
+
+An area that is cropped back to the square **comes round the other side**. It
+ran off the edge into the next square, and the next square is this same tile
+again, so the point just past the edge is a point of this tile — read in the
+neighbour's own frame, quarter turn and all — and the flood goes on from there.
+A band straddling a seam is one click, not two: without it only the half on
+this side filled, and it looked as though the fill had stopped at nothing.
+Nothing is crossed that was not already open, since the flood beyond the seam
+runs on the same barrier as the flood before it.
 
 How far it may bridge is set by the **thinnest mark in play**. The bridge eats
 into a wall from the inside, and a wall it eats through is no wall: an outline
@@ -421,6 +624,14 @@ Each of its points is then moved onto the **true** edge of whichever mark it is
 closest to: half that mark's width out from its centreline, less a hair so it
 tucks under rather than meeting exactly. The marks are exact, so the fill's
 edge becomes exact too.
+
+How far back the snap may reach has to cover how far out the grown mask went.
+The flood is grown twice — once to bridge a pinch, once to tuck under the ink —
+so the traced ring can stand a good two grows inside a wall, plus the cell it
+was placed to. Asked to reach back only a cell or two, the snap could not see
+the wall it had gone past and left the point where it lay: the fill sat seven
+units inside a stroke nine and a half wide, and the stroke read as thin along
+everything filled against it.
 
 Points are not enough on a **round** wall, though. Two of them are joined by a
 straight chord, and a chord across a circle cuts inside it — by the sagitta,

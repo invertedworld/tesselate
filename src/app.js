@@ -45,16 +45,61 @@
     return '#' + h;
   }
 
-  function rgbOf(hex) { return (normHex(hex) || '#17160f').slice(0, 7); }
+  /* A gradient is ink like any other, written as text so that it saves,
+     compares, keys a map and sits in a palette exactly the way a hex
+     does — nothing downstream has to learn a second kind of value:
+
+       lin(45,shape,#cf4326,#2b4a9c)
+
+     The angle is degrees clockwise from east. The anchor is what the
+     sweep is measured across: `shape` the mark's own bounds, so every
+     copy of it looks the same; `tile` the square, so a whole figure can
+     fade across it. Both repeat exactly, which a sweep across the plane
+     could not — the plane has no edges to run between. */
+  const GRAD_RE = /^lin\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(shape|tile)\s*,\s*(.+?)\s*\)$/i;
+
+  function parseInk(v) {
+    if (typeof v !== 'string') return null;
+    const m = GRAD_RE.exec(v.trim());
+    if (!m) return null;
+    const stops = m[3].split(',').map((c) => normHex(c));
+    if (stops.length < 2 || stops.some((c) => !c)) return null;
+    return { deg: ((+m[1] % 360) + 360) % 360, anchor: m[2].toLowerCase(), stops };
+  }
+
+  const gradText = (g) => `lin(${+g.deg.toFixed(1)},${g.anchor},${g.stops.join(',')})`;
+
+  // Either kind of ink, or null if it is neither.
+  const normInk = (v) => (parseInk(v) ? v.trim() : normHex(v));
+
+  function rgbOf(hex) {
+    const g = parseInk(hex);
+    if (g) return rgbOf(g.stops[0]);
+    return (normHex(hex) || '#17160f').slice(0, 7);
+  }
 
   function alphaOf(hex) {
+    const g = parseInk(hex);
+    if (g) return alphaOf(g.stops[0]);
     const h = normHex(hex) || '';
     return h.length === 9 ? parseInt(h.slice(7), 16) : 255;
   }
 
   function withAlpha(hex, a) {
+    const g = parseInk(hex);
+    /* The slider sits under the hex field, and that field shows the
+       stop the sweep starts from, so this does too. The far stop keeps
+       whatever alpha it was given — which is how a fade to nothing stays
+       a fade to nothing when the near end is dimmed. */
+    if (g) return gradText({ ...g, stops: g.stops.map((c, i) => (i ? c : withAlpha(c, a))) });
     const v = clamp(Math.round(a), 0, 255);
     return v >= 255 ? rgbOf(hex) : rgbOf(hex) + v.toString(16).padStart(2, '0');
+  }
+
+  // CSS for a swatch: the sweep itself, so the palette shows what it is.
+  function inkCss(v) {
+    const g = parseInk(v);
+    return g ? `linear-gradient(${g.deg + 90}deg, ${g.stops.join(', ')})` : v;
   }
 
   // SVG keeps colour and opacity in separate attributes, so a translucent
@@ -71,8 +116,14 @@
      is drafted on. */
   const RULE_MINOR = 'rgba(23,22,15,0.3)';
   const RULE_MAJOR = 'rgba(23,22,15,0.46)';
-  const SUB_RULE = 'rgba(23,22,15,0.13)';
-  const SUB_FINE = 'rgba(23,22,15,0.065)';
+  const SUB_RULE = 'rgba(86,156,214,0.55)';   // the lattice you asked for
+  const SUB_FINE = 'rgba(86,156,214,0.26)';   // the levels it gains on zoom
+
+  /* Below this many screen pixels apart the lattice stops being a guide
+     and turns into a wash. A hairline every three pixels still reads as
+     something to place a point on; five was dropping the finest grids at
+     ordinary zooms, which is why 64 came up blank. */
+  const SUB_MIN_PX = 3;
   /* The rail's accent is a shade brighter, for a dark ground; on the
      paper the original holds, and a mark drawn in the palette's own
      vermilion still matches it, so the halo knows to darken instead. */
@@ -82,8 +133,6 @@
   const FILL_RES = 700;    // scratch resolution for area detection
   const FILL_GROW = 2;      // ~3 tile units, enough to tuck under a stroke
   const FILL_MAX = 1400;    // the widest scratch grid, when one square is not enough
-  const WRAP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-  const ORIGIN = [[0, 0]];
 
   /* Three ways to sit the work on the diagonal:
        off    everything square
@@ -154,12 +203,11 @@
   }
 
   function findCrossJunctions() {
-    const sig = `${state.pattern.n}:${state.pattern.cells.join('')}:${state.clip}`;
+    const sig = `${state.pattern.n}:${state.pattern.cells.join('')}`;
     if (crossFor && crossFor.list === state.shapes && crossFor.sig === sig) return;
     crossFor = { list: state.shapes, sig };
     crossJunctions = new Map();
-    // Clipped marks stop at the edge, so nothing of theirs reaches a neighbour.
-    const pad = state.clip ? 0 : Math.min(overhang(state.shapes), 2);
+    const pad = Math.min(overhang(state.shapes), 2);
     const marks = state.shapes.filter((s) => s.layer === 'stroke' && !s.filled && ROUNDABLE[s.kind]);
     if (!pad || !marks.length) return;
 
@@ -234,15 +282,33 @@
     width: 9,
     palette: BUILT_IN[0].name,
     palettes: [],       // the user's own named palettes
+    recent: [],         // ink mixed rather than picked, newest first
     filled: false,
     grid: true,
-    clip: false,
-    wrap: false,
+    arrows: false,      // an arrow per square, showing the turn it carries
     snap: false,
-    sub: 0,
+    sub: 0,             // 0 while the grid is off
+    subLast: 8,         // the size it comes back to when switched on
     diag: 'off',        // 'off' | 'grid' | 'plane'
     pattern: { n: 2, cells: cellsFromPreset(PRESETS[1]) },
     view: { scale: 0.5, x: 0, y: 0, rot: 0 },
+  };
+
+  /* What a drawing starts as, kept so *New* can put it all back. Only
+     what belongs to the drawing: the palettes and the recently mixed
+     strip are the table's, and survive it. */
+  const DEFAULTS = {
+    color: state.color,
+    width: state.width,
+    filled: state.filled,
+    grid: state.grid,
+    arrows: state.arrows,
+    snap: state.snap,
+    sub: state.sub,
+    subLast: state.subLast,
+    diag: state.diag,
+    pattern: { n: state.pattern.n, cells: state.pattern.cells.slice() },
+    view: { ...state.view },
   };
 
   let undoStack = [];
@@ -250,6 +316,9 @@
   let draft = null;    // the mark currently being placed
   let pending = null;  // 'point' | 'bend': the live mark is between clicks
   let pressAt = null;  // where the press that started the mark landed, on screen
+  let grip = null;     // a corner or a point of what is held, being dragged
+  let hoverGrip = null;// the one under the pointer, so the turn ring can show
+  let hitTile = null;  // the square whose copy the last hit test answered from
   let draftPath = null;
 
   let cw = 0, ch = 0, dpr = 1, rect = { left: 0, top: 0 };
@@ -262,8 +331,20 @@
   let picked = [];          // the marks the select tool is holding
   let lasso = null;         // the area being swept out with two fingers
   let moving = null;        // { index, preview, from, base } while dragging one
+  /* Two modifiers, each with one job.
+
+     Shift is snapping, wherever you are and whatever you are doing: it
+     suspends it where it is on and asks for it where it is off, so the
+     one key answers "not this time" and "just this once" both.
+
+     Alt — or Control, for a hand that reaches there first — constrains:
+     the direction of a line, the symmetry of an arc, the squareness of a
+     rectangle, a circle grown from its middle. Everything a tool can be
+     asked to hold to while it is being drawn. */
   let shiftHeld = false;
   let altHeld = false;
+  let ctrlHeld = false;
+  const constrain = () => altHeld || ctrlHeld;
   let hoverSnap = null;   // lattice point the next mark would land on
   const pointers = new Map();
 
@@ -339,7 +420,7 @@
   }
 
   function updateActive(w) {
-    if (!draft && !pending && !moving) drawTile = null;
+    if (!draft && !pending && !moving && !lasso && !grip) drawTile = null;
     const i = Math.floor(w.x / T), j = Math.floor(w.y / T);
     if (i !== activeTile.i || j !== activeTile.j) {
       activeTile = { i, j };
@@ -434,8 +515,17 @@
     return n;
   }
 
-  const snapping = () => state.snap && !altHeld;
-  const latticeAt = (p) => (diagGrid() ? snapIso(p, effSub()) : snapPoint(p, effSub()));
+  const snapping = () => state.snap !== shiftHeld;
+
+  /* How many times the zoom has halved the lattice that was picked. The
+     isometric frame is described by the picked count and this, not by
+     the product: its rows are rounded to fit the tile, so the finer
+     level has to be the picked one subdivided rather than a lattice
+     worked out afresh for the larger count. */
+  const subSkip = () => (state.sub && effSub() > state.sub ? effSub() / state.sub : 1);
+  const latticeAt = (p) => (diagGrid()
+    ? snapIso(p, state.sub || 12, subSkip())
+    : snapPoint(p, effSub()));
 
   /* Marks already on the tile are snap targets in their own right: the
      ends and middles of lines and arcs, the centres and rims of circles,
@@ -448,6 +538,21 @@
      them merely passes through. */
   const SNAP_RANK = { end: 0, corner: 0, centre: 1, mid: 2, edge: 3 };
 
+  // Everything on the tile, boxed once, so a square that cannot possibly
+  // hold a target can be passed over without asking each mark.
+  function allBBox() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const sh of state.shapes) {
+      if (sh.layer !== 'stroke') continue;
+      const b = shapeBBox(sh);
+      if (!b) continue;
+      const pen = (sh.filled ? 0 : sh.width || 0) / 2;
+      x0 = Math.min(x0, b.x0 - pen); y0 = Math.min(y0, b.y0 - pen);
+      x1 = Math.max(x1, b.x1 + pen); y1 = Math.max(y1, b.y1 + pen);
+    }
+    return x0 === Infinity ? null : { x0, y0, x1, y1 };
+  }
+
   function objectSnap(p) {
     const tol = 12 / state.view.scale;
     let best = null, bestRank = Infinity, bestD = Infinity;
@@ -459,18 +564,50 @@
         best = q; bestRank = rank; bestD = d;
       }
     };
-    for (const sh of state.shapes) {
-      if (sh.layer !== 'stroke') continue;
-      for (const q of snapPointsOf(sh)) consider(q);
-      /* And anywhere along the mark itself, not only the points that
-         have names. Without this, a click away from an end or a middle
-         had nothing to catch on and fell through to the lattice — so
-         with the lattice off there was nothing, and with it on what
-         looked like snapping to the mark was really snapping to a grid
-         point that happened to lie under it. Edges rank last, so an end
-         still wins wherever one is in reach. */
-      const near = nearestOnShape(sh, p);
-      if (near) consider({ x: near.p.x, y: near.p.y, kind: 'edge' });
+
+    /* Every copy of a mark, not only the one this square drew. The plane
+       is one tile over and over, so the end of a line is on screen many
+       times over; catching the one under the pointer — and not its twin
+       an inch away — is the whole point of a snap, and which square it
+       happens to belong to is not something the hand knows about.
+
+       Each square is searched in its own frame, quarter turn and all,
+       and whatever it offers is carried back here, where the mark being
+       drawn lives. A square whose marks cannot reach the pointer is
+       passed over on a box test rather than asked mark by mark. */
+    const bb = allBBox();
+    if (!bb) return null;
+    const home = frameTile();
+    const world = placeIn(p, home.i, home.j);
+    const reach = 1 + Math.min(overhang(state.shapes), 2);
+
+    for (let dj = -reach; dj <= reach; dj++) {
+      for (let di = -reach; di <= reach; di++) {
+        const i = home.i + di, j = home.j + dj;
+        const q = unplaceIn(world, i, j);
+        if (q.x < bb.x0 - tol || q.x > bb.x1 + tol
+          || q.y < bb.y0 - tol || q.y > bb.y1 + tol) continue;
+        const back = (t, kind) => {
+          const w = placeIn(t, i, j);
+          const h = unplaceIn(w, home.i, home.j);
+          h.kind = kind;
+          return h;
+        };
+        for (const sh of state.shapes) {
+          if (sh.layer !== 'stroke') continue;
+          for (const t of snapPointsOf(sh)) consider(back(t, t.kind));
+          /* And anywhere along the mark itself, not only the points that
+             have names. Without this, a click away from an end or a
+             middle had nothing to catch on and fell through to the
+             lattice — so with the lattice off there was nothing, and
+             with it on what looked like snapping to the mark was really
+             snapping to a grid point that happened to lie under it.
+             Edges rank last, so an end still wins wherever one is in
+             reach. */
+          const near = nearestOnShape(sh, q);
+          if (near) consider(back(near.p, 'edge'));
+        }
+      }
     }
     return best;
   }
@@ -552,7 +689,7 @@
   // What the plane should show: the committed shapes, with a shape
   // being dragged swapped for its moved copy, plus any live draft.
   function drawList() {
-    if (!moving && !draft) return state.shapes;
+    if (!moving && !draft && !(grip && grip.previews)) return state.shapes;
     const list = state.shapes.slice();
     if (moving) {
       moving.members.forEach((m, k) => {
@@ -560,16 +697,21 @@
         if (i >= 0) list[i] = moving.previews[k];
       });
     }
+    if (grip && grip.previews) {
+      gripMembers(grip).forEach((m, k) => {
+        const i = list.indexOf(m);
+        if (i >= 0) list[i] = grip.previews[k];
+      });
+    }
     if (draft) list.push(draft);
     return list;
   }
 
-  /* A mark may run past its own square, and with clipping off it shows
-     there. So a square just off screen can still put ink on screen, and
-     the paint has to reach further than the view does. Capped, since a
-     very long mark would otherwise have us painting the whole plane. */
+  /* A mark may run past its own square and show on its neighbours. So a
+     square just off screen can still put ink on screen, and the paint has
+     to reach further than the view does. Capped, since a very long mark
+     would otherwise have us painting the whole plane. */
   function overhang(list) {
-    if (state.clip) return 0;
     let lo = 0, hi = T;
     for (const sh of list) {
       const b = shapeBBox(sh);
@@ -596,7 +738,6 @@
 
     draftPath = draft ? buildPath(draft) : null;
     const hair = 0.9 / scale;
-    const offs = state.wrap ? WRAP : ORIGIN;
     const list = paintOrder(drawList());
     junctions = findJunctions(list);
     findCrossJunctions();
@@ -614,7 +755,8 @@
     ctx.lineJoin = 'round';
 
     const pad = overhang(list);
-    const overTiles = (marks) => {
+    // One mark, laid in every square the view reaches.
+    const overTiles = (sh) => {
       for (let j = R.j0 - pad; j <= R.j1 + pad; j++) {
         for (let i = R.i0 - pad; i <= R.i1 + pad; i++) {
           ctx.save();
@@ -626,39 +768,26 @@
             ctx.rotate((r * Math.PI) / 2);
             ctx.translate(-T / 2, -T / 2);
           }
-          if (state.clip) {
-            ctx.beginPath();
-            ctx.rect(0, 0, T, T);
-            ctx.clip();
-          }
-          for (const o of offs) {
-            if (o[0] || o[1]) ctx.translate(o[0] * T, o[1] * T);
-            for (const sh of marks) {
-              if (sh.inside) paintShape(sh.inside, hair, 'inside');
-              else paintShape(sh, hair, sh.fillColor ? 'outline' : undefined);
-            }
-            if (o[0] || o[1]) ctx.translate(-o[0] * T, -o[1] * T);
-          }
+          if (sh.inside) paintShape(sh.inside, hair, 'inside');
+          else paintShape(sh, hair, sh.fillColor ? 'outline' : undefined);
           ctx.restore();
         }
       }
     };
 
-    /* With every mark cut at its own edge, a square can be finished
-       before the next is started. Without clipping a mark runs over its
-       neighbours, and finishing square by square puts everything the
-       next square draws on top of everything this one drew — a fill two
-       squares along landing over a border already laid down. So the
-       plane is painted mark by mark instead, each across every square,
-       and depth means the same thing everywhere. */
-    if (state.clip) overTiles(list);
-    else for (const sh of list) overTiles([sh]);
+    /* A mark runs over its neighbours, so finishing square by square
+       would put everything the next square draws on top of everything
+       this one drew — a fill two squares along landing over a border
+       already laid down. The plane is painted mark by mark instead, each
+       across every square, so depth means the same thing everywhere. */
+    for (const sh of list) overTiles(sh);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (cleanFrame) return;
 
     if (state.grid) drawRules(R);
     if (state.sub > 1) drawSubGrid(R);
+    if (state.arrows) drawOrientation(R);
     if (picked.length) drawSelection();
     if (lasso) drawLasso();
     if (hoverSnap) drawSnapMark();
@@ -667,25 +796,54 @@
   /* `part` paints one half of a mark that has both: 'inside' its own
      interior, 'outline' its border. They go down at different depths —
      see paintOrder — so the plane asks for them separately. */
+  /* Ink as the canvas wants it. A flat colour is its own string; a
+     gradient becomes a sweep laid across whichever box it is anchored
+     to — the mark's own bounds, or the tile. This runs inside the tile's
+     own transform, so the box is in tile units and every copy of the
+     mark across the plane gets the same sweep. */
+  function inkStyle(ink, s) {
+    const g = parseInk(ink);
+    if (!g) return ink;
+    let box = { x0: 0, y0: 0, x1: T, y1: T };
+    if (g.anchor === 'shape') {
+      const b = shapeBBox(s);
+      // A straight line has no thickness to its bounds; the ink does.
+      const pad = s.layer === 'stroke' && !s.filled ? (s.width || 0) / 2 : 0;
+      if (b) box = { x0: b.x0 - pad, y0: b.y0 - pad, x1: b.x1 + pad, y1: b.y1 + pad };
+    }
+    const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2;
+    const t = (g.deg * Math.PI) / 180;
+    const ux = Math.cos(t), uy = Math.sin(t);
+    // Half the box measured along the sweep, so the end stops land on it.
+    const half = (Math.abs((box.x1 - box.x0) * ux) + Math.abs((box.y1 - box.y0) * uy)) / 2;
+    if (!(half > 0.01)) return g.stops[0];
+    const grad = ctx.createLinearGradient(cx - ux * half, cy - uy * half,
+                                          cx + ux * half, cy + uy * half);
+    const last = g.stops.length - 1;
+    g.stops.forEach((c, i) => grad.addColorStop(i / last, c));
+    return grad;
+  }
+
   function paintShape(s, hair, part) {
     const p = s === draft ? draftPath : pathOf(s);
     if (s.layer === 'fill') {
-      ctx.fillStyle = s.color;
+      ctx.fillStyle = inkStyle(s.color, s);
       ctx.fill(p, 'evenodd');
     } else if (s.filled) {
-      ctx.fillStyle = s.color;
+      ctx.fillStyle = inkStyle(s.color, s);
       ctx.fill(p);
     } else {
       if (s.fillColor && part !== 'outline') {
-        ctx.fillStyle = s.fillColor;
+        ctx.fillStyle = inkStyle(s.fillColor, s);
         ctx.fill(p);
       }
       if (part === 'inside') return;
       const [cap, join] = capsOf(s.kind);
       ctx.lineCap = cap;
       ctx.lineJoin = join;
-      ctx.strokeStyle = s.color;
-      ctx.fillStyle = s.color;
+      const style = inkStyle(s.color, s);
+      ctx.strokeStyle = style;
+      ctx.fillStyle = style;
       const w = Math.max(s.width, hair);
       ctx.lineWidth = w;
       ctx.stroke(p);
@@ -754,17 +912,189 @@
      group holds a fill and the borders around it, and repainting them in
      the order they sit in the list put the fill last, burying every
      border it had. */
+  const gripMembers = (g) => (g.kind === 'point' ? [g.shape] : g.members);
+
   function heldNow() {
+    if (grip && grip.previews) return grip.previews.filter(Boolean);
     return (moving ? moving.previews : heldMarks()).filter(Boolean);
   }
 
   function drawHaloes() {
-    for (const shape of heldNow()) inTileFrame(() => drawHalo(shape));
+    for (const shape of heldNow()) {
+      inTileFrame(() => drawHalo(shape), unitFrame(shape));
+    }
+  }
+
+  /* The box round what is held, and the grips on it.
+
+     A corner grip sizes the lot about the corner opposite, so the one
+     you are not holding stays put. Just outside each corner is a ring
+     that turns it instead — near the corner rather than on it, which is
+     where a hand reaches for a turn anyway, and it only shows while the
+     pointer is there so the box stays quiet the rest of the time.
+
+     A single line, arc or circle also gets grips on its own points, so
+     its ends, its bend and its radius can be taken hold of directly
+     rather than through a box. */
+  const GRIP = 4.5;        // half a grip square, in screen pixels
+  const SIZE_R = 8;        // a press this near a corner sizes
+  const TURN_OFF = 22;     // how far out past a corner the turn ring sits
+  const TURN_R = 8;        // the arc's own radius
+  const TURN_GRAB = 12;    // and how near its middle you must press
+
+  // The box round everything held, grips and all.
+  function heldBox(shapes) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const sh of shapes) {
+      const b = shapeBBox(sh);
+      if (!b) continue;
+      const pen = (sh.layer === 'fill' || sh.filled ? 0 : sh.width) / 2;
+      x0 = Math.min(x0, b.x0 - pen); y0 = Math.min(y0, b.y0 - pen);
+      x1 = Math.max(x1, b.x1 + pen); y1 = Math.max(y1, b.y1 + pen);
+    }
+    return x0 === Infinity ? null : { x0, y0, x1, y1 };
+  }
+
+  /* Where a corner's turn ring sits, and the middle of the band that
+     summons it: out along the diagonal from the middle of the box, well
+     clear of the corner grip. Drawing and hit testing both come from
+     here, so the ring cannot be anywhere but where it is taken hold of.
+     They overlapped once, and a press on the near side of the ring came
+     back as a size, which read as the turn doing nothing at all. */
+  const spotFrom = (c, mid) => {
+    const dx = c.x - mid.x, dy = c.y - mid.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const out = TURN_OFF / state.view.scale;
+    return { x: c.x + (dx / len) * out, y: c.y + (dy / len) * out };
+  };
+
+  function turnSpot(box, i) {
+    const mid = { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
+    return spotFrom(boxCorners(box)[i], mid);
+  }
+
+  /* The corners of what is held, carried round by a turn in progress.
+     The box is the one the turn started from, turned by however far it
+     has gone — not the upright box round the marks as they are now,
+     which swells and shrinks as a figure goes round and would have the
+     grips crawling about instead of travelling with it. */
+  function turnCorners() {
+    const cs = boxCorners(grip.box);
+    const a = grip.angle || 0;
+    if (!a) return cs;
+    const cos = Math.cos(a), sin = Math.sin(a), c = grip.centre;
+    return cs.map((p) => {
+      const dx = p.x - c.x, dy = p.y - c.y;
+      return { x: c.x + dx * cos - dy * sin, y: c.y + dx * sin + dy * cos };
+    });
+  }
+
+  const boxCorners = (b) => {
+    const g = 7 / state.view.scale;
+    return [
+      { x: b.x0 - g, y: b.y0 - g }, { x: b.x1 + g, y: b.y0 - g },
+      { x: b.x1 + g, y: b.y1 + g }, { x: b.x0 - g, y: b.y1 + g },
+    ];
+  };
+
+  /* The points a single mark offers directly. `set` writes one back,
+     which is what a drag of that grip does. */
+  function pointGrips(sh) {
+    if (!sh || sh.layer !== 'stroke') return [];
+    const at = (x, y, set, what) => ({ x, y, set, what });
+    if (sh.kind === 'line') {
+      return [
+        at(sh.a.x, sh.a.y, (p) => ({ ...sh, a: p }), 'this end'),
+        at(sh.b.x, sh.b.y, (p) => ({ ...sh, b: p }), 'this end'),
+      ];
+    }
+    if (sh.kind === 'curve') {
+      // The bend grip sits on the arc, not on the control point, which
+      // is off the curve entirely and means nothing to the eye.
+      const m = { x: (sh.a.x + 2 * sh.c.x + sh.b.x) / 4, y: (sh.a.y + 2 * sh.c.y + sh.b.y) / 4 };
+      return [
+        at(sh.a.x, sh.a.y, (p) => ({ ...sh, a: p }), 'this end'),
+        at(sh.b.x, sh.b.y, (p) => ({ ...sh, b: p }), 'this end'),
+        at(m.x, m.y, (p) => ({ ...sh, c: quadThrough(sh.a, sh.b, p) }), 'the bend'),
+      ];
+    }
+    if (sh.kind === 'circle') {
+      const r = sh.r;
+      return [
+        at(sh.c.x + r, sh.c.y, (p) => ({ ...sh, r: Math.abs(p.x - sh.c.x) }), 'the radius'),
+        at(sh.c.x - r, sh.c.y, (p) => ({ ...sh, r: Math.abs(p.x - sh.c.x) }), 'the radius'),
+        at(sh.c.x, sh.c.y + r, (p) => ({ ...sh, r: Math.abs(p.y - sh.c.y) }), 'the radius'),
+        at(sh.c.x, sh.c.y - r, (p) => ({ ...sh, r: Math.abs(p.y - sh.c.y) }), 'the radius'),
+      ];
+    }
+    return [];
+  }
+
+  // Everything the pointer could take hold of, nearest first.
+  /* `w` is the pointer in its own square. Grips are matched out on the
+     plane rather than in tile coordinates: a grip is drawn in one place
+     only — the square the selection was taken in — and comparing tile
+     coordinates would have it answer from every copy of that square at
+     once, which is the very thing the box no longer does. */
+  function gripAt(w) {
+    const held = heldMarks();
+    if (!held.length) return null;
+    const k = state.view.scale;
+    const f = frameTile(), h = heldFrame();
+    const pw = placeIn(w, f.i, f.j);
+    const near = (p) => {
+      const q = placeIn(p, h.i, h.j);
+      return Math.hypot(q.x - pw.x, q.y - pw.y) * k;
+    };
+
+    if (held.length === 1) {
+      for (const g of pointGrips(held[0])) {
+        if (near(g) <= SIZE_R) {
+          return { kind: 'point', shape: held[0], set: g.set, what: g.what, x: g.x, y: g.y };
+        }
+      }
+    }
+    const box = heldBox(held);
+    if (!box) return null;
+    const corners = boxCorners(box);
+    const mid = { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
+    // The corner squares size.
+    let best = null;
+    corners.forEach((c, i) => {
+      const d = near(c);
+      if (d <= SIZE_R && (!best || d < best.d)) best = { d, i };
+    });
+    if (best) {
+      return { kind: 'size', at: best.i, members: held, box,
+        anchor: corners[(best.i + 2) % 4], from: corners[best.i] };
+    }
+    // The ring out past each one turns.
+    let turn = null;
+    corners.forEach((c, i) => {
+      const d = near(turnSpot(box, i));
+      if (d <= TURN_GRAB && (!turn || d < turn.d)) turn = { d, i };
+    });
+    if (turn) {
+      // The box is kept as it was: an upright box round a turning figure
+      // grows and shrinks as it goes, and the grips would skitter with it.
+      return { kind: 'turn', at: turn.i, members: held, centre: mid, box, from: corners[turn.i] };
+    }
+    return null;
   }
 
   function drawSelection() {
     const shapes = heldNow();
     if (!shapes.length) return;
+    /* Turning: one box, the one the turn began with, carried round by
+       however far it has gone. Measuring the marks afresh each frame
+       would give the upright box round a figure mid-turn, which is a
+       different shape every frame and says nothing about where the thing
+       you took hold of has got to. */
+    if (grip && grip.kind === 'turn' && grip.box) {
+      drawSelectionQuad(turnCorners());
+      drawGrips(shapes);
+      return;
+    }
     /* One box to a unit, not to a mark. A group is one thing, and a
        dashed box round each of its marks said the opposite — loudly,
        when the group was a figure of a dozen. Marks held loose still get
@@ -774,9 +1104,10 @@
       const b = shapeBBox(sh);
       if (!b) continue;
       const pen = (sh.layer === 'fill' || sh.filled ? 0 : sh.width) / 2;
-      const key = sh.group ? `g${sh.group}` : sh;
+      const key = unitKey(sh);
       const had = boxes.get(key);
-      const box = { x0: b.x0 - pen, y0: b.y0 - pen, x1: b.x1 + pen, y1: b.y1 + pen };
+      const box = { x0: b.x0 - pen, y0: b.y0 - pen, x1: b.x1 + pen, y1: b.y1 + pen,
+        at: unitFrame(sh) };
       if (!had) boxes.set(key, box);
       else {
         had.x0 = Math.min(had.x0, box.x0);
@@ -785,17 +1116,91 @@
         had.y1 = Math.max(had.y1, box.y1);
       }
     }
-    for (const box of boxes.values()) drawSelectionBox(box);
+    // Each unit's box in the square that unit is being shown in.
+    for (const box of boxes.values()) drawSelectionBox(box, box.at);
+    drawGrips(shapes);
+  }
+
+  function drawGrips(shapes) {
+    const turning = !!(grip && grip.kind === 'turn' && grip.box);
+    const box = turning ? grip.box : heldBox(shapes);
+    if (!box) return;
+    const corners = turning ? turnCorners() : boxCorners(box);
+    const mid = turning ? grip.centre
+      : { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
+    const f = heldFrame();
+    const put = (p) => { const q = placeIn(p, f.i, f.j); return w2s(q.x, q.y); };
+    const hot = grip || hoverGrip;
+    ctx.save();
+    ctx.lineWidth = 1;
+    const square = (p, live) => {
+      const t = put(p);
+      ctx.beginPath();
+      ctx.rect(t.x - GRIP, t.y - GRIP, GRIP * 2, GRIP * 2);
+      ctx.fillStyle = live ? ACCENT : '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#17160f';
+      ctx.stroke();
+    };
+    // The corners size; the grips a single mark offers move its own points.
+    corners.forEach((c, i) => square(c, !!hot && hot.kind === 'size' && hot.at === i));
+    if (shapes.length === 1) {
+      for (const g of pointGrips(shapes[0])) {
+        square(g, !!hot && hot.kind === 'point' && Math.hypot(g.x - hot.x, g.y - hot.y) < 1e-6);
+      }
+    }
+    // A ring just outside a corner turns instead of sizing, and only
+    // shows while the pointer is out there — the box stays quiet
+    // otherwise, which is most of the time.
+    if (hot && hot.kind === 'turn') {
+      drawTurnRing(put(spotFrom(corners[hot.at], mid)), put(mid));
+    }
+    ctx.restore();
+  }
+
+  /* The turn ring: a quarter of an arc with a head on each end, sitting
+     out past its corner and staying there — the pointer moves within the
+     band that summons it, the ring does not follow. It is centred on the
+     way out from the middle of what is held, so its ends come round to
+     either side of the way the turn would go: out past the top right
+     corner the heads point down and left, and so on round. */
+  function drawTurnRing(at, mid) {
+    const d = Math.atan2(at.y - mid.y, at.x - mid.x);
+    const rad = (deg) => (deg * Math.PI) / 180;
+    // A quarter of a circle, centred on the way out from the middle —
+    // so it sits on the far side of the pointer and its ends come round
+    // to either side of the way the turn would go.
+    const a1 = d + rad(-45), a2 = d + rad(45);
+    ctx.strokeStyle = '#17160f';
+    ctx.fillStyle = '#17160f';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, TURN_R, a1, a2);
+    ctx.stroke();
+    // A head on each end, pointing the way the arc runs there.
+    const head = (a, way) => {
+      const px = at.x + Math.cos(a) * TURN_R, py = at.y + Math.sin(a) * TURN_R;
+      const tx = -Math.sin(a) * way, ty = Math.cos(a) * way;   // along the arc
+      const nx = -ty, ny = tx;                                  // across it
+      ctx.beginPath();
+      ctx.moveTo(px + tx * 4.2, py + ty * 4.2);
+      ctx.lineTo(px - tx * 0.7 + nx * 2.6, py - ty * 0.7 + ny * 2.6);
+      ctx.lineTo(px - tx * 0.7 - nx * 2.6, py - ty * 0.7 - ny * 2.6);
+      ctx.closePath();
+      ctx.fill();
+    };
+    head(a1, -1);
+    head(a2, 1);
   }
 
   // The home square's own frame, where a mark's coordinates mean what
   // they say.
-  function inTileFrame(draw) {
+  function inTileFrame(draw, tile) {
     ctx.save();
     applyView();
-    const f = frameTile();
+    const f = tile || frameTile();
     ctx.translate(f.i * T, f.j * T);
-    const tr = tileRot();
+    const tr = rotAt(state.pattern, f.i, f.j);
     if (tr) {
       ctx.translate(T / 2, T / 2);
       ctx.rotate((tr * Math.PI) / 2);
@@ -818,16 +1223,17 @@
     ctx.globalAlpha = 1;
   }
 
-  function drawSelectionBox(b) {
-    const v = state.view;
+  const drawSelectionBox = (b, at) => drawSelectionQuad(boxCorners(b), at);
+
+  // Four corners, not a box: a turn in progress carries them round, and
+  // an upright box cannot say where they have got to.
+  function drawSelectionQuad(pts, at) {
     // Drawn as a quad through the transform so it stays around the mark
-    // when the plane is turned.
-    const g = 7 / v.scale;
-    const corners = [
-      [b.x0 - g, b.y0 - g], [b.x1 + g, b.y0 - g],
-      [b.x1 + g, b.y1 + g], [b.x0 - g, b.y1 + g],
-    ].map(([x, y]) => {
-      const q = fromTileSpace({ x, y });
+    // when the plane is turned, and in the square that mark was picked up
+    // in rather than whichever one the pointer is over.
+    const f = at || heldFrame();
+    const corners = pts.map((p) => {
+      const q = placeIn(p, f.i, f.j);
       return w2s(q.x, q.y);
     });
     ctx.save();
@@ -899,8 +1305,62 @@
     return out;
   }
 
+  /* An arrow in each square saying which way that square has been turned.
+     A drawing under a block of quarter-turns reads as one figure, and it is
+     easy to lose track of which square is which; the symmetry panel says it
+     for the block, this says it on the plane itself.
+
+     It sits at the top left of each SQUARE as drawn, and stays there: a
+     badge carried round by the turn would land on a different corner every
+     quarter, telling you the same thing twice and being harder to find for
+     it. The arrow inside it does the turning. Vermilion and heavy, because
+     it is an answer to a question you are asking, not part of the work. */
+  const ARROW_PX = 9;          // half the arrow's length, on screen
+  const ARROW_INSET = 15;      // how far in from the corner it sits
+
+  function drawOrientation(R) {
+    // Too small to read is worse than absent: it becomes noise along the
+    // rules. The square has to be able to hold the badge and its inset.
+    if (R.step < ARROW_INSET * 3) return;
+    const frames = tileFrames(R);
+    if (frames.length > 400) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const [i, j, rot] of frames) {
+      // The square's own top-left corner, in world; w2s carries whatever
+      // the view is doing to it.
+      const inset = ARROW_INSET / state.view.scale;
+      const p = w2s(i * T + inset, j * T + inset);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(rot * (Math.PI / 2) + state.view.rot);
+      const a = ARROW_PX;
+      const head = a * 0.78;
+      ctx.strokeStyle = ACCENT;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(0, a);
+      ctx.lineTo(0, -a);
+      ctx.moveTo(-head * 0.62, -a + head * 0.62);
+      ctx.lineTo(0, -a);
+      ctx.lineTo(head * 0.62, -a + head * 0.62);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   function drawSubGrid(R) {
-    if (R.step / state.sub < 5) return;          // too dense to read
+    /* How close together the lines actually fall. On the isometric frame
+       that is not the column width: the thirty degree families lie a row
+       apart measured square to themselves, which is shorter. */
+    let cell = T / state.sub;
+    if (diagGrid()) {
+      const { w, h } = isoBasis(state.sub);
+      cell = Math.min(w, (h * Math.sqrt(3)) / 2);
+    }
+    if (cell * state.view.scale < SUB_MIN_PX) return;
     const frames = tileFrames(R);
     if (frames.length > 160) return;             // more squares than it helps to rule
     const eff = effSub();
@@ -941,27 +1401,38 @@
 
   function latticeLines(n, skip, hair) {
     const cell = T / n;
+    /* The tile's own edge is a line of the lattice like any other. It is
+       left to the tile rules while those are showing, so the two do not
+       stack a blue line over a grey one — but with them off nothing drew
+       it at all, and the lattice came out with a gap two cells wide at
+       every seam and a run of even cells in between. */
+    const first = state.grid ? 1 : 0;
 
     if (diagGrid()) {
-      const { w, h } = isoBasis(n);
-      const slope = h / (2 * w);          // a thirty degree rise
+      // Columns and rows both come off the basis, which rounds them to
+      // whole numbers of the tile so the lattice meets itself at a seam.
+      // n is the level in force; skip says how far it was subdivided, so
+      // the basis is built from the count that was picked.
+      const { w, h, cols, rows } = isoBasis(n / skip, skip);
+      const slope = h / (2 * w);          // half a row to the column
+      const climb = cols / 2;             // rows a sloped line gains over the tile
       const drop = (k) => (skip > 1 && ((k % skip) + skip) % skip === 0);
       // Upright: the tile's own columns.
-      for (let i = 1; i < n; i++) {
+      for (let i = first; i < cols; i++) {
         if (drop(i)) continue;
         hair(i * w, 0, i * w, T);
       }
       // The two thirty degree families, y = ±slope·x + k·h, cut to the tile.
-      for (let k = Math.ceil((-slope * T) / h); k <= Math.floor(T / h); k++) {
+      for (let k = -Math.ceil(climb); k <= rows; k++) {
         if (!drop(k)) clipHair(slope, k * h, hair);
       }
-      for (let k = 0; k <= Math.floor((T + slope * T) / h); k++) {
+      for (let k = 0; k <= rows + Math.ceil(climb); k++) {
         if (!drop(k)) clipHair(-slope, k * h, hair);
       }
       return;
     }
 
-    for (let i = 1; i < n; i++) {
+    for (let i = first; i < n; i++) {
       if (skip > 1 && i % skip === 0) continue;
       hair(i * cell, 0, i * cell, T);
       hair(0, i * cell, T, i * cell);
@@ -995,12 +1466,22 @@
     afterChange();
   }
 
-  function replaceShapes(next) {
-    undoStack.push(state.shapes.slice());
-    redoStack.length = 0;
+  /* `merge` writes over the step already on the stack instead of adding
+     one. A slider drag fires an event a pixel; without it a single sweep
+     of the alpha would need forty presses of undo to take back. */
+  function replaceShapes(next, merge) {
+    if (!merge) {
+      undoStack.push(state.shapes.slice());
+      redoStack.length = 0;
+    }
     state.shapes = next;
     afterChange();
   }
+
+  /* True while a slider is being dragged, so every write it makes after
+     the first folds into that one step. Closed by the control's `change`,
+     which covers the mouse coming up and the arrow keys alike. */
+  let sliderRun = false;
 
   /* Opening a drawing, or starting one, is a new session rather than an
      edit: the steps behind it belong to a picture that is no longer on
@@ -1072,7 +1553,24 @@
       case 'select': {
         drawTile = activeTile;
         endLasso(true);
-        const hit = hitTest(w, { interior: true });
+        /* A grip answers before the marks under it: it sits on the box,
+           which is usually over the very mark it belongs to. It is read
+           against the square the selection is in, wherever the pointer
+           has wandered to. */
+        const g = gripAt(w);
+        if (g) {
+          drawTile = { ...heldFrame() };
+          grip = g; hoverGrip = null; requestDraw();
+          return true;
+        }
+        /* A mark that runs past its own square shows on the next one,
+           and the ink you are pointing at there is a copy of it at
+           coordinates this square knows nothing about. Without looking
+           outward, half of a mark straddling a seam could be picked up
+           and half could not, depending on which side of the seam the
+           click landed — which is the same reach erase and the
+           eyedropper have had all along. */
+        const hit = hitTest(w, { interior: true, anyTile: true });
         const add = !!(e && (e.shiftKey || e.metaKey || e.ctrlKey));
         // Nothing under the press: drag an area out from it instead.
         if (!hit) {
@@ -1081,19 +1579,34 @@
           requestDraw();
           return true;
         }
-        // Shift adds a mark to what is held, or puts it back down.
+        /* The copy that was clicked, not one of its twins. `hitTile` is
+           the square the ink under the pointer belonged to, which is the
+           pointer's own square unless the click landed on ink that has
+           run over from a neighbour. Everything from here — the box, the
+           grips, and the drag itself — happens there. */
+        const home = hitTile ? { i: hitTile.i, j: hitTile.j } : { ...activeTile };
+        const from = unplaceIn(placeIn(w, frameTile().i, frameTile().j), home.i, home.j);
+        drawTile = home;
+        /* Shift adds a mark to what is held, or puts it back down. Any
+           copy of it will do: the plane is one tile over and over, so the
+           mark under the pointer is the same mark whichever square it was
+           clicked in. What is already held keeps the square it was taken
+           in, though — the square travels with each unit, so the copy you
+           just clicked lights up and the ones already in hand stay where
+           they were. */
         if (add) {
           const unit = new Set(groupOf(hit));
           const had = picked.some((sh) => unit.has(sh));
-          select(had ? picked.filter((sh) => !unit.has(sh)) : picked.concat([hit]));
+          const next = had ? picked.filter((sh) => !unit.has(sh)) : picked.concat([hit]);
+          select(next, home);
           requestDraw();
           return true;     // a pick, not the start of a move
         }
         // Pressing on something already held moves the whole armful.
-        if (!heldMarks().includes(hit)) select([hit]);
+        if (!heldMarks().includes(hit)) select([hit], home);
         requestDraw();
         const members = heldMarks();
-        moving = { members, previews: members, base: hit, from: w, dx: 0, dy: 0 };
+        moving = { members, previews: members, base: hit, from, dx: 0, dy: 0 };
         return true;
       }
       case 'pencil':
@@ -1108,14 +1621,14 @@
         draft = newStroke({ kind: 'curve', a: p, b: p, c: p });
         break;
       case 'circle':
-        /* Shift at the press grows the circle from its centre. Without
+        /* Alt at the press grows the circle from its centre. Without
            it the drag runs rim to rim, which is what pulling a circle
            out of nothing reads as, and it puts the two points you place
            on the shape itself rather than one of them in its middle.
-           The key is read off the press, not off `shiftHeld`, so it is
-           the state at the moment the circle began that decides. */
+           The key is read off the press, not off the tracked flag, so
+           it is the state at the moment the circle began that decides. */
         anchor = p;
-        fromCentre = !!(e && e.shiftKey);
+        fromCentre = !!(e && (e.altKey || e.ctrlKey));
         draft = newStroke({ kind: 'circle', c: p, r: 0, filled: state.filled });
         break;
       case 'rect':
@@ -1143,11 +1656,11 @@
      still lands on it: a whole cell along the axes, a cell's diagonal
      across them. */
   function endPoint(a, w) {
-    if (shiftHeld && diagGrid()) {
+    if (constrain() && diagGrid()) {
       const n = effSub();
-      return isoRun(a, w, n || state.sub || 12, !!n && snapping());
+      return isoRun(a, w, state.sub || 12, !!n && snapping(), subSkip());
     }
-    if (shiftHeld) {
+    if (constrain()) {
       const p = snapAngle(a, w, Math.PI / 4);
       if (!snapping() || !state.sub) return p;
       const dx = p.x - a.x, dy = p.y - a.y;
@@ -1164,8 +1677,7 @@
 
   /* The plane repeats every tile, so a mark dragged into a neighbour is
      the same mark one period over. Bring it back to the home tile:
-     left where it lands it would sit outside every tile's clip and
-     could never be drawn again. */
+     left where it lands its home square would have no record of it. */
   // Whole-tile steps that bring a set of marks back to the home square,
   // measured on the group as a whole so it never comes apart.
   function homeShift(shapes) {
@@ -1199,9 +1711,66 @@
     return moved;
   }
 
+  function moveGrip(w) {
+    // A turn reads the angle off the raw pointer: pulling it onto the
+    // lattice first would fight the eighth it is being held to.
+    const p = grip.kind === 'turn' ? w : sp(w);
+    if (grip.kind === 'point') {
+      grip.previews = [grip.set(p)];
+    } else if (grip.kind === 'size') {
+      /* One factor, not two: an ellipse is not a shape this can hold.
+         It is read off whichever way the box has more room, so a long
+         thin selection is sized by its length. The corner opposite is
+         the anchor, so the one you are not holding stays where it is. */
+      const a = grip.anchor;
+      const wasX = grip.from.x - a.x, wasY = grip.from.y - a.y;
+      const nowX = p.x - a.x, nowY = p.y - a.y;
+      const k = Math.abs(wasX) > Math.abs(wasY) ? nowX / wasX : nowY / wasY;
+      grip.factor = clamp(isFinite(k) ? k : 1, 0.02, 40);
+      grip.previews = grip.members.map((sh) => scaleShape(sh, a.x, a.y, grip.factor));
+    } else {
+      const c = grip.centre;
+      const was = Math.atan2(grip.from.y - c.y, grip.from.x - c.x);
+      let ang = Math.atan2(p.y - c.y, p.x - c.x) - was;
+      // A turn snaps like everything else: eighths while snapping is on,
+      // any angle at all while it is off — and Shift flips whichever of
+      // those you are in, the same as it does everywhere.
+      if (snapping()) ang = Math.round(ang / (Math.PI / 4)) * (Math.PI / 4);
+      grip.angle = ang;
+      grip.previews = grip.members.map((sh) => rotateShape(sh, c.x, c.y, ang));
+    }
+    setHint(grip.kind === 'size'
+      ? `Sizing — ${Math.round(grip.factor * 100)}%`
+      : grip.kind === 'turn'
+        ? `Turning — ${Math.round((grip.angle * 180) / Math.PI)}° · Shift for any angle`
+        : `Moving ${grip.what}`, true);
+    requestDraw();
+  }
+
+  function endGrip() {
+    const g = grip;
+    grip = null;
+    if (!g || !g.previews) { requestDraw(); return; }
+    let next = g.previews;
+    const [hx, hy] = homeShift(next);
+    if (hx || hy) next = next.map((sh) => translateShape(sh, hx, hy));
+    const members = gripMembers(g);
+    const swap = new Map(members.map((sh, i) => [sh, next[i]]));
+    replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), next));
+    select(picked.map((sh) => swap.get(sh) || sh));
+    setHint(HINTS[state.tool] || HINTS.base);
+  }
+
   function moveDraw(w) {
+    if (grip) { moveGrip(w); return; }
     if (lasso) {
-      lasso.b = w;
+      /* A sweep belongs to the square it was started in, like any other
+         mark in progress. Left to follow the pointer into the next one
+         it was read in that square's frame instead, and the corner it
+         was anchored at appeared to jump there with it. It keeps its
+         own square, and the box stops at that square's edge rather than
+         reaching into a neighbour it cannot pick anything up from. */
+      lasso.b = { x: clamp(w.x, 0, T), y: clamp(w.y, 0, T) };
       select(lasso.base.concat(caughtBy(lassoBox())));
       setHint(picked.length
         ? `Sweeping — ${picked.length} ${picked.length === 1 ? 'mark' : 'marks'} inside`
@@ -1248,10 +1817,9 @@
            directions around it are the sides, so every box drawn here
            is a face of a cube. Shift makes it a rhombus with equal
            sides — the face itself rather than a panel of one. */
-        const n = effSub() || state.sub || 12;
         let b = snapping() ? snapAt(w) || w : w;
-        let pts = isoRhombus(anchor, b, n);
-        if (shiftHeld && pts.length === 4) {
+        let pts = isoRhombus(anchor, b, state.sub || 12, subSkip());
+        if (constrain() && pts.length === 4) {
           const la = dist(pts[0], pts[1]), lb = dist(pts[0], pts[3]);
           const m = Math.max(la, lb);
           const at = (p, len) => (len < 1e-9 ? p : {
@@ -1266,7 +1834,7 @@
       }
       case 'rect': {
         let q = snapping() ? snapAt(w) || w : w;
-        if (shiftHeld) {
+        if (constrain()) {
           // Square off the longer side. On the lattice both sides are
           // whole steps, so this stays on it.
           const dx = q.x - anchor.x, dy = q.y - anchor.y;
@@ -1299,7 +1867,9 @@
           // or halfway between it.
           const half = T / effSub() / 2;
           r = Math.round(r / half) * half;
-        } else if (shiftHeld) {
+        } else if (snapping()) {
+          // Snapping asked for, with no lattice to give it: a coarse step
+          // of its own is better than nothing to land on.
           r = Math.round(r / 25) * 25;
         }
         draft.r = r;
@@ -1361,6 +1931,7 @@
   }
 
   function endDraw(dragged) {
+    if (grip) { endGrip(); return; }
     if (lasso) { endLasso(); return; }
     if (moving) {
       const m = moving;
@@ -1404,16 +1975,17 @@
     // Shift holds the apex square above the middle of the chord, which
     // is what makes the arc symmetrical. Like the line's direction
     // constraint, it takes precedence over snapping.
-    const m = shiftHeld ? bisectorFoot(draft.a, draft.b, w) : sp(w);
+    const m = constrain() ? bisectorFoot(draft.a, draft.b, w) : sp(w);
     draft.c = quadThrough(draft.a, draft.b, m);
     requestDraw();
   }
 
   function cancelDraft() {
-    if (!draft && !pending && !moving) return false;
+    if (!draft && !pending && !moving && !grip) return false;
     draft = null;
     pending = null;
     moving = null;
+    grip = null;
     setHint(HINTS[state.tool]);
     requestDraw();
     return true;
@@ -1440,11 +2012,49 @@
     return out;
   }
 
-  function select(list) {
+  /* A selection belongs to the square it was taken in, and stays there.
+     The plane is one tile repeated, so every mark is on screen many times
+     over; the box used to be drawn in whichever square the pointer
+     happened to be over, which meant clicking one copy lit up another,
+     and carrying the pointer across a seam threw the box to the copy in
+     the next square. Neither is anything the drawing did. */
+  /* The square is remembered per unit, not for the selection as a whole:
+     picking up a second mark in another square should light up the copy
+     that was clicked, and leave the first where it was. Keyed by the
+     unit's id rather than the object, since every edit hands back fresh
+     objects and the squares have to survive that. */
+  let pickedAt = new Map();
+  const unitKey = (sh) => (sh.group ? `g${sh.group}` : `i${sh.id}`);
+
+  function select(list, tile) {
     // A sweep over marks already in hand should not hold them twice.
     picked = [...new Set((list || []).filter(Boolean))];
+    if (!picked.length) { pickedAt = new Map(); syncEditButtons(); return; }
+    const at = tile ? { i: tile.i, j: tile.j } : null;
+    const next = new Map();
+    for (const sh of heldMarks()) {
+      const k = unitKey(sh);
+      if (next.has(k)) continue;
+      // Where it already was; failing that where this click landed;
+      // failing that alongside whatever else is in hand.
+      next.set(k, pickedAt.get(k) || at || firstAt() || { ...frameTile() });
+    }
+    pickedAt = next;
     syncEditButtons();
   }
+
+  const firstAt = () => {
+    for (const v of pickedAt.values()) return v;
+    return null;
+  };
+
+  // The square a mark is being shown in.
+  const unitFrame = (sh) => pickedAt.get(unitKey(sh)) || frameTile();
+
+  // The selection's home: where the first thing picked up still sits. The
+  // grips work on the marks themselves, which are one tile's worth however
+  // many squares their copies are being shown in, so they are drawn here.
+  const heldFrame = () => firstAt() || frameTile();
 
   function syncEditButtons() {
     const g = document.getElementById('groupBtn');
@@ -1455,8 +2065,9 @@
     const units = new Set(marks.map((sh) => sh.group || sh));
     g.disabled = units.size < 2;
     u.disabled = !marks.some((sh) => sh.group);
-    document.getElementById('turnLeftBtn').disabled = !marks.length;
-    document.getElementById('turnRightBtn').disabled = !marks.length;
+    for (const id of ['turnLeftBtn', 'turnRightBtn', 'flipXBtn', 'flipYBtn']) {
+      document.getElementById(id).disabled = !marks.length;
+    }
     document.getElementById('cutBtn').disabled = !marks.length;
     document.getElementById('copyBtn').disabled = !marks.length;
     document.getElementById('pasteBtn').disabled = !clipboard.length;
@@ -1507,6 +2118,24 @@
     flash(`Turned 45° ${eighths > 0 ? 'clockwise' : 'anticlockwise'}`);
   }
 
+  /* Turning over what is in hand, about the middle of what it makes
+     together — so a figure mirrors as one thing rather than each mark
+     flipping on its own spot and the figure coming apart. */
+  function flipHeld(axis) {
+    const marks = heldMarks();
+    if (!marks.length) return flash('Nothing in hand to flip');
+    const box = heldBox(marks);
+    if (!box) return flash('Nothing in hand to flip');
+    const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2;
+    let flipped = marks.map((sh) => flipShape(sh, cx, cy, axis));
+    const [hx, hy] = homeShift(flipped);
+    if (hx || hy) flipped = flipped.map((sh) => translateShape(sh, hx, hy));
+    const swap = new Map(marks.map((sh, k) => [sh, flipped[k]]));
+    replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), flipped));
+    select(picked.map((sh) => swap.get(sh) || sh));
+    flash(axis === 'x' ? 'Flipped left to right' : 'Flipped top to bottom');
+  }
+
   function ungroupPicked() {
     const marks = heldMarks().filter((sh) => sh.group);
     if (!marks.length) return flash('Nothing grouped in what you are holding');
@@ -1540,7 +2169,7 @@
     || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
 
   function marksToText(marks) {
-    return '{\n "format": "tessera-marks",\n "version": 1,\n "marks": [\n'
+    return '{\n "format": "tesselate-marks",\n "version": 1,\n "marks": [\n'
       + marks.map((sh) => '  ' + JSON.stringify(sh)).join(',\n') + '\n ]\n}\n';
   }
 
@@ -1644,9 +2273,9 @@
     return { x: dx + T / 2, y: dy + T / 2 };
   }
 
-  /* A mark may run past its own square and, with clipping off, show
-     there — so the ink under the cursor can belong to a neighbour's
-     copy of it, at coordinates this square knows nothing about. That
+  /* A mark may run past its own square and show on its neighbours — so
+     the ink under the cursor can belong to a neighbour's copy of it, at
+     coordinates this square knows nothing about. That
      ink was unerasable: the tool looked only where this square would
      have drawn the mark, found nothing, and did nothing. `anyTile` looks
      outward from this square as well, mapping the point back through
@@ -1667,24 +2296,26 @@
 
     /* Where to look. This square first; then, with `anyTile`, outward
        from it — because a mark may run past its own square and, with
-       clipping off, show there, so the ink under the cursor can belong
+       show on their neighbours, so the ink under the cursor can belong
        to a neighbour's copy at coordinates this square knows nothing
        about. That ink was untouchable: the tool looked only where this
        square would have drawn the mark, found nothing, and did nothing.
        Each pass is tried in every square before the next begins, so a
        border anywhere beats a fill here — which is the order they are
        painted in, and so the order they are seen in. */
-    const spots = [p];
-    if (o.anyTile && !state.clip) {
+    hitTile = drawTile || activeTile;
+    const home = hitTile;
+    const spots = [{ q: p, i: home.i, j: home.j }];
+    if (o.anyTile) {
       const pad = Math.min(overhang(state.shapes), 2);
       if (pad) {
-        const home = drawTile || activeTile;
         const world = placeIn(p, home.i, home.j);
         for (let ring = 1; ring <= pad; ring++) {
           for (let dj = -ring; dj <= ring; dj++) {
             for (let di = -ring; di <= ring; di++) {
               if (Math.max(Math.abs(di), Math.abs(dj)) !== ring) continue;
-              spots.push(unplaceIn(world, home.i + di, home.j + dj));
+              const i = home.i + di, j = home.j + dj;
+              spots.push({ q: unplaceIn(world, i, j), i, j });
             }
           }
         }
@@ -1692,9 +2323,11 @@
     }
 
     for (const pass of passes) {
-      for (const q of spots) {
-        const hit = hitPass(q, o, pass);
-        if (hit) return hit;
+      for (const spot of spots) {
+        const hit = hitPass(spot.q, o, pass);
+        // Which square's copy of it was under the pointer, so a click can
+        // light up the one that was clicked rather than one of its twins.
+        if (hit) { hitTile = { i: spot.i, j: spot.j }; return hit; }
       }
     }
     return null;
@@ -1800,16 +2433,26 @@
     const onEdge = hitTest(w, { strokesOnly: true, edgeOnly: true, anyTile: true });
     if (onEdge) return recolour(onEdge);
 
-    const offs = state.wrap ? WRAP : ORIGIN;
     const home = drawTile || activeTile;
     const r0 = rotAt(state.pattern, home.i, home.j);
-    const pad = state.clip ? 0 : Math.min(overhang(state.shapes), 2);
-    const places = [];
-    for (let dj = -pad; dj <= pad; dj++) {
-      for (let di = -pad; di <= pad; di++) {
-        places.push([di, dj, rotAt(state.pattern, home.i + di, home.j + dj)]);
+    const pad = Math.min(overhang(state.shapes), 2);
+
+    /* Which squares lay ink on the grid. It has to reach `pad` squares
+       past the grid's own edge, not past the home square's: when the
+       grid widens to the ring of neighbours, the squares beyond that
+       ring still run ink into it, and leaving them out left the barrier
+       full of holes exactly where the flood was about to be judged on
+       whether it had escaped. */
+    const placesFor = (rings) => {
+      const out = [];
+      const far = rings + pad;
+      for (let dj = -far; dj <= far; dj++) {
+        for (let di = -far; di <= far; di++) {
+          out.push([di, dj, rotAt(state.pattern, home.i + di, home.j + dj)]);
+        }
       }
-    }
+      return out;
+    };
     findCrossJunctions();
 
     /* The flood runs on a grid laid over the square. An area held in
@@ -1824,16 +2467,15 @@
     let cropped = false;           // gave up looking for a closed boundary
     const maxRings = pad ? 1 : 0;  // the square and the ring around it
     let ox = 0, oy = 0, span = T, R = FILL_RES, k = R / T;
-    let px, barrier, walls, mask, traced, grow, raw, edges;
+    let px, barrier, walls, mask, traced, grow, raw, edges, isGround, seeds;
 
     for (;;) {
+      const places = placesFor(rings);
       ox = -rings * T;
       oy = -rings * T;
       span = (1 + 2 * rings) * T;
       R = Math.min(FILL_MAX, Math.round((FILL_RES * span) / T));
       k = R / span;
-      // Wrapping makes a torus of one square; a wider grid is not one.
-      const wrapOK = state.wrap && !rings;
       if (fillCanvas.width !== R) fillCanvas.width = fillCanvas.height = R;
       fctx.setTransform(1, 0, 0, 1, 0, 0);
       fctx.clearRect(0, 0, R, R);
@@ -1841,50 +2483,47 @@
       fctx.lineJoin = 'round';
 
       /* Barriers have to be everything the eye can see holding the area
-         in, not only this square's own marks. With clipping off a mark
-         runs over its neighbours, so the squares around this one lay ink
+         in, not only this square's own marks. A mark runs over its
+         neighbours, so the squares around this one lay ink
          on it as well — and an area enclosed by that ink flooded
          straight out, because the flood had never been told about it.
          Each neighbour is drawn through its own quarter-turn and mapped
-         back into this square's frame; the wrapped copies come too, when
-         edge wrapping is on.
+         back into this square's frame.
          Each mark is laid down in a colour that encodes its index, so
          one read gives both the barriers and which mark made each. */
-      let barriers = 0;
       let thinnest = Infinity;   // the narrowest wall, in cells
       for (const [di, dj, r] of places) {
         tileKey = `${mod(home.i + di, state.pattern.n)},${mod(home.j + dj, state.pattern.n)}`;
-        for (const o of offs) {
-          fctx.setTransform(k, 0, 0, k, -ox * k, -oy * k);
-          fctx.translate(T / 2, T / 2);
-          fctx.rotate((-r0 * Math.PI) / 2);
-          fctx.translate(di * T, dj * T);
-          fctx.rotate((r * Math.PI) / 2);
-          fctx.translate(-T / 2, -T / 2);
-          fctx.translate(o[0] * T, o[1] * T);
-          state.shapes.forEach((sh, idx) => {
-            if (sh.layer !== 'stroke') return;
-            const id = idx + 1;
-            const col = `rgb(${id & 255},${(id >> 8) & 255},0)`;
-            fctx.strokeStyle = col;
-            fctx.fillStyle = col;
-            const path = pathOf(sh);
-            if (sh.filled) fctx.fill(path);
-            else {
-              const [cap, join] = capsOf(sh.kind);
-              fctx.lineCap = cap;
-              fctx.lineJoin = join;
-              const pen = Math.max(sh.width, 2 / k);
-              fctx.lineWidth = pen;
-              fctx.stroke(path);
-              paintJunctions(fctx, sh, pen);
-              if (pen * k < thinnest) thinnest = pen * k;
-            }
-            barriers++;
-          });
-        }
+        fctx.setTransform(k, 0, 0, k, -ox * k, -oy * k);
+        fctx.translate(T / 2, T / 2);
+        fctx.rotate((-r0 * Math.PI) / 2);
+        fctx.translate(di * T, dj * T);
+        fctx.rotate((r * Math.PI) / 2);
+        fctx.translate(-T / 2, -T / 2);
+        state.shapes.forEach((sh, idx) => {
+          if (sh.layer !== 'stroke') return;
+          const id = idx + 1;
+          const col = `rgb(${id & 255},${(id >> 8) & 255},0)`;
+          fctx.strokeStyle = col;
+          fctx.fillStyle = col;
+          const path = pathOf(sh);
+          if (sh.filled) fctx.fill(path);
+          else {
+            const [cap, join] = capsOf(sh.kind);
+            fctx.lineCap = cap;
+            fctx.lineJoin = join;
+            const pen = Math.max(sh.width, 2 / k);
+            fctx.lineWidth = pen;
+            fctx.stroke(path);
+            paintJunctions(fctx, sh, pen);
+            if (pen * k < thinnest) thinnest = pen * k;
+          }
+        });
       }
-      if (!barriers) return flash('Draw an outline first');
+      /* No marks at all is not a reason to refuse: the whole tile is one
+         open area, and filling it is how the paper gets a colour. It
+         comes out as the ground, the same as filling round a figure
+         does, so a mark drawn afterwards still sits on top of it. */
 
       px = fctx.getImageData(0, 0, R, R).data;
       barrier = new Uint8Array(R * R);
@@ -1898,20 +2537,71 @@
         x: clamp(Math.round((w.x - ox) * k), 0, R - 1),
         y: clamp(Math.round((w.y - oy) * k), 0, R - 1),
       };
-      raw = floodMask(barrier, R, R, seed.x, seed.y, wrapOK);
+      raw = floodMask(barrier, R, R, seed.x, seed.y, false);
       if (!raw) return flash('No open area under the cursor');
+      seeds = [seed];
 
       /* Still running when it met the edge of the grid? Then the area
          goes on into the next square and the grid was too small. Two
-         things are not that: an area meeting all four edges is the
-         ground the marks sit on, and the ground is a square; and an area
-         still running at the widest grid was never enclosed at all, so
-         it is traced over the square again — a mark the size of the
-         square tiles, where one the size of three does not. */
+         things are not that: the ground the marks sit on, which meets
+         all four edges and is a square; and an area still running at the
+         widest grid, which was never enclosed at all, so it is traced
+         over the square again — a mark the size of the square tiles,
+         where one the size of three does not.
+
+         All four edges only reads as the ground on the square's own
+         grid. On the widened one it says the flood ran out to every edge
+         of nine squares, which is the opposite of enclosed — and read as
+         the ground it was kept, so a fill clicked in the corner of the
+         square came back two and a half squares across and its copies
+         tiled over everything around them. */
       edges = edgesHit(raw, R);
-      if (!cropped && edges.any && !edges.all) {
+      isGround = !rings && edges.all;
+      if (!cropped && edges.any && !isGround) {
         if (rings < maxRings) { rings++; continue; }
         if (rings) { rings = 0; cropped = true; continue; }
+      }
+
+      /* An area that runs off the square's edge goes on into the next
+         square — and the next square is this same tile again. So where
+         it leaves, it comes back: the point a cell past the edge is a
+         point of this tile, read in the neighbour's own frame, quarter
+         turn and all. Flooding on from there carries the area round to
+         wherever else in the tile it belongs.
+
+         Without it a band straddling a seam filled only on this side of
+         it, since the rest of the band is a different part of the same
+         tile, and looked as though the fill had stopped at nothing. It
+         crosses no ink: the flood beyond the seam runs on the same
+         barrier as the flood before it. */
+      if (cropped) {
+        const step = 1 / k;
+        for (let pass = 0; pass < 8; pass++) {
+          const found = [];
+          const over = (gx, gy, dx, dy) => {
+            if (!raw[gy * R + gx]) return;
+            const q = { x: (gx + 0.5 + dx) * step, y: (gy + 0.5 + dy) * step };
+            const world = placeIn(q, home.i, home.j);
+            const b = unplaceIn(world, Math.floor(world.x / T), Math.floor(world.y / T));
+            const bx = clamp(Math.round(b.x * k), 0, R - 1);
+            const by = clamp(Math.round(b.y * k), 0, R - 1);
+            if (!raw[by * R + bx] && !barrier[by * R + bx]) found.push({ x: bx, y: by });
+          };
+          for (let a = 0; a < R; a++) {
+            over(R - 1, a, 1, 0); over(0, a, -1, 0);
+            over(a, R - 1, 0, 1); over(a, 0, 0, -1);
+          }
+          let grew = false;
+          for (const s of found) {
+            if (raw[s.y * R + s.x]) continue;
+            const more = floodMask(barrier, R, R, s.x, s.y, false);
+            if (!more) continue;
+            for (let i = 0, n = R * R; i < n; i++) if (more[i]) raw[i] = 1;
+            seeds.push(s);
+            grew = true;
+          }
+          if (!grew) break;
+        }
       }
 
       /* Which marks did the area come up against? Read from a little way
@@ -1919,7 +2609,7 @@
          trustworthy index, because the canvas stores colour premultiplied
          by alpha and along a soft edge a small index like 3 comes back as
          2, naming an entirely different mark. */
-      const near = dilate(raw, R, R, 6, wrapOK);
+      const near = dilate(raw, R, R, 6, false);
       const bounding = new Set();
       for (let i = 0, n = R * R; i < n; i++) {
         if (!near[i] || px[i * 4 + 3] !== 255) continue;
@@ -1943,11 +2633,19 @@
          the flood gives up there — leaving a pocket of unfilled paper
          past the pinch. Growing the area bridges that pinch, so flooding
          a second time through the bridge picks the pocket up. */
-      const bridged = dilate(raw, R, R, grow, wrapOK);
+      const bridged = dilate(raw, R, R, grow, false);
       const pinched = new Uint8Array(R * R);
       for (let i = 0, n = R * R; i < n; i++) pinched[i] = barrier[i] && !bridged[i] ? 1 : 0;
-      const filled = floodMask(pinched, R, R, seed.x, seed.y, wrapOK) || raw;
-      mask = dilate(filled, R, R, grow, wrapOK);
+      // Every place the area was reached from, so a part of it that came
+      // round a seam is bridged like the part the click landed in.
+      let filled = null;
+      for (const s of seeds) {
+        const f = floodMask(pinched, R, R, s.x, s.y, false);
+        if (!f) continue;
+        if (!filled) { filled = f; continue; }
+        for (let i = 0, n = R * R; i < n; i++) if (f[i]) filled[i] = 1;
+      }
+      mask = dilate(filled || raw, R, R, grow, false);
       break;
     }
 
@@ -1959,7 +2657,14 @@
     // The grid can only place an edge to the nearest cell. Move each
     // point onto the true edge of the mark it belongs to, a hair inside
     // so it tucks under rather than meeting it exactly.
-    const loops = snapLoopsToWalls(traced, walls, 2 / k, 0.6);
+    /* The flood is grown twice over — once to bridge a pinch, once to
+       tuck the edge under the ink — so the traced ring can stand a good
+       two `grow` inside a wall, plus the cell it was placed to. Asked to
+       reach back only two cells, the snap could not see the wall it had
+       gone past and left the point where it lay: the fill sat seven
+       units inside a stroke nine and a half wide, and the stroke looked
+       thin along everything that had been filled against it. */
+    const loops = snapLoopsToWalls(traced, walls, (2 * grow + 2) / k, 0.6);
 
     /* Everything traced came off a grid laid over this one tile, so a
        loop that lies wholly outside it is not part of the area that was
@@ -1996,12 +2701,9 @@
     // over the top of it.
     region.walls = walls.map((sh) => sh.id).filter((v) => v != null);
 
-    // An area that reaches all four edges is the ground the marks sit
-    // on, not the inside of any of them; grouping it would tie the whole
-    // picture together. An area that had to be traced over more than one
-    // square is by definition not it.
-    const isGround = !rings && edges.all;
-
+    // The ground the marks sit on is not the inside of any of them, so
+    // grouping it would tie the whole picture together — `isGround`, from
+    // the flood above.
     if (walls.length && !isGround) {
       /* Every fill makes its own group, out of the marks around it that
          are not already spoken for. A mark that already belongs to a
@@ -2060,7 +2762,7 @@
     // this the next press looks like a two-finger pinch and drawing
     // quietly stops working.
     if (e.pointerType === 'mouse') pointers.clear();
-    altHeld = e.altKey;
+    altHeld = e.altKey; ctrlHeld = e.ctrlKey; shiftHeld = e.shiftKey;
     pointers.set(e.pointerId, s);
     if (pointers.size === 2) { startPinch(); return; }
     if (pointers.size > 2) return;
@@ -2093,7 +2795,7 @@
 
   canvas.addEventListener('pointermove', (e) => {
     const s = screenPt(e);
-    altHeld = e.altKey;
+    altHeld = e.altKey; ctrlHeld = e.ctrlKey; shiftHeld = e.shiftKey;
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, s);
 
     if (mode === 'pinch' && pointers.size >= 2) { movePinch(); return; }
@@ -2110,7 +2812,14 @@
     if (pending === 'bend') { bendPending(w); return; }
     if (pending === 'point' || mode === 'draw') { moveDraw(w); return; }
     if (state.tool === 'select') {
-      canvas.classList.toggle('grabbable', insideTile(w, 5) && !!hitTest(w, { interior: true }));
+      const g = gripAt(w);
+      const was = hoverGrip ? `${hoverGrip.kind}${hoverGrip.at}${hoverGrip.x || 0}` : '';
+      const now = g ? `${g.kind}${g.at}${g.x || 0}` : '';
+      hoverGrip = g;
+      if (now !== was) requestDraw();
+      canvas.classList.toggle('grabbable',
+        !g && insideTile(w, 5) && !!hitTest(w, { interior: true, anyTile: true }));
+      canvas.classList.toggle('gripping', !!g);
     }
   });
 
@@ -2127,7 +2836,7 @@
     const s = screenPt(e);
     // A quick flick can release past the last pointermove; take the
     // release position as the final one.
-    if (mode === 'draw' && (draft || moving || lasso)) {
+    if (mode === 'draw' && (draft || moving || lasso || grip)) {
       moveDraw(drawPt(s.x, s.y));
     }
     const dragged = !!pressAt && Math.hypot(s.x - pressAt.x, s.y - pressAt.y) >= DRAG_MIN;
@@ -2145,6 +2854,7 @@
   }
 
   canvas.addEventListener('pointerleave', () => {
+    if (hoverGrip) { hoverGrip = null; requestDraw(); }
     if (hoverSnap) { hoverSnap = null; requestDraw(); }
   });
   canvas.addEventListener('pointerup', release);
@@ -2183,7 +2893,9 @@
     if (drop) select(base);
     if (box) {
       const caught = caughtBy(box);
-      select(base.concat(caught));
+      // What the sweep picked up belongs to the square it was drawn in.
+      // Marks already in hand keep the square they were taken in.
+      select(base.concat(caught), frameTile());
       flash(caught.length
         ? `${caught.length} ${caught.length === 1 ? 'mark' : 'marks'} picked up`
         : 'Nothing wholly inside that area');
@@ -2272,6 +2984,15 @@
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    /* A modifier is state, not an action, so it is taken down before
+       anything else looks at the key. Control held on its own used to
+       read as the start of a shortcut and never reached the flag at all,
+       which left it constraining nothing. Shift changes what will be
+       snapped to, so the mark under the cursor is worked out afresh the
+       moment it moves. */
+    if (e.key === 'Shift') { shiftHeld = true; noteHover(lastWorld); requestDraw(); return; }
+    if (e.key === 'Alt') { altHeld = true; return; }
+    if (e.key === 'Control') { ctrlHeld = true; return; }
     if (e.key === 'Escape' && closeNewPrompt()) { e.preventDefault(); return; }
     // Space picks a tool now, so stop the browser scrolling the page or
     // re-clicking whichever button still holds focus.
@@ -2284,10 +3005,23 @@
     if (meta && k === 's') { e.preventDefault(); saveProject(e.shiftKey); return; }
     if (meta && k === 'o') { e.preventDefault(); loadProject(); return; }
     if (meta && k === 'g') { e.preventDefault(); e.shiftKey ? ungroupPicked() : groupPicked(); return; }
+    /* Everything on the tile. It takes the select tool up as well, since
+       picking marks up and then having no way to move them would be an
+       odd place to be left. */
+    if (meta && k === 'a') {
+      e.preventDefault();
+      cancelDraft();
+      if (!state.shapes.length) return flash('Nothing on the tile');
+      setTool('select');
+      select(state.shapes.slice());
+      requestDraw();
+      const n = picked.length;
+      return flash(`${n} ${n === 1 ? 'mark' : 'marks'} picked up`);
+    }
     if (meta) return;
 
     if (picked.length && !draft && !pending) {
-      const far = e.shiftKey ? 5 : 1;
+      const far = e.altKey || e.ctrlKey ? 5 : 1;
       const step = (snapping() ? T / effSub() : 10) * far;
       const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
       if (d) {
@@ -2308,8 +3042,6 @@
         return;
       }
     }
-    if (e.key === 'Shift') { shiftHeld = true; return; }
-    if (e.key === 'Alt') { altHeld = true; noteHover(lastWorld); return; }
     if (e.key === 'Escape') {
       if (dropper) { armDropper(false); return; }
       if (endLasso(true)) { requestDraw(); return; }
@@ -2327,9 +3059,12 @@
     // Tile rules gave up G to grouping; T for tiles.
     if (k === 't') { toggle('grid'); return; }
     if (k === 's') { toggle('snap'); return; }
-    if (k === 'd') { setSub(SUBS[(SUBS.indexOf(state.sub) + 1) % SUBS.length]); return; }
-    if (k === 'k') { toggle('clip'); return; }
-    if (k === 'w') { toggle('wrap'); return; }
+    // D steps through the sizes, and switches the grid on where it is
+    // off — the switch itself is the way to turn it back off.
+    if (k === 'd') {
+      setSub(state.sub ? SUBS[(SUBS.indexOf(state.sub) + 1) % SUBS.length] : state.subLast || 8);
+      return;
+    }
     if (k === 'h') { resetView(); return; }
     if (k === '=' || k === '+') { zoomAt(cw / 2, ch / 2, 1.2); return; }
     if (k === '-') { zoomAt(cw / 2, ch / 2, 1 / 1.2); return; }
@@ -2337,14 +3072,15 @@
 
   window.addEventListener('blur', () => {
     pointers.clear();
-    shiftHeld = altHeld = false;
+    shiftHeld = altHeld = ctrlHeld = false;
     canvas.classList.remove('outside', 'panning');
   });
 
   window.addEventListener('keyup', (e) => {
     if (e.key === ' ') e.preventDefault();
-    if (e.key === 'Shift') shiftHeld = false;
-    if (e.key === 'Alt') { altHeld = false; noteHover(lastWorld); }
+    if (e.key === 'Shift') { shiftHeld = false; noteHover(lastWorld); requestDraw(); }
+    if (e.key === 'Alt') altHeld = false;
+    if (e.key === 'Control') ctrlHeld = false;
   });
 
   /* ---------------- ui ---------------- */
@@ -2366,6 +3102,7 @@
   }
 
   function setTool(tool) {
+    hoverGrip = null;
     if (pending) cancelDraft();
     if (tool !== 'select') select([]);
     endLasso(true);
@@ -2378,17 +3115,18 @@
     saveSoon();
   }
 
-  function setColor(raw, quiet) {
-    const hex = normHex(raw);
+  function setColor(raw, quiet, inkOnly) {
+    const hex = normInk(raw);
     if (!hex) return;
     state.color = hex;
     for (const b of document.querySelectorAll('.swatch')) b.classList.toggle('on', b.dataset.color === hex);
     syncMixer(quiet);
-    if (picked.length) {
+    rememberSoon();
+    if (!inkOnly && picked.length) {
       const swap = new Map();
       for (const sh of picked) if (sh.color !== hex) swap.set(sh, Object.assign({}, sh, { color: hex }));
       if (swap.size) {
-        replaceShapes(state.shapes.map((sh) => swap.get(sh) || sh));
+        replaceShapes(state.shapes.map((sh) => swap.get(sh) || sh), sliderRun);
         select(picked.map((sh) => swap.get(sh) || sh));
       }
     }
@@ -2448,8 +3186,8 @@
       // Asking for snapping with no lattice to snap to isn't useful;
       // give it a reasonable one.
       flash(state.snap
-        ? (state.sub ? `Snapping to marks and a ${state.sub} × ${state.sub} grid · hold Alt to ignore`
-                     : 'Snapping to marks · hold Alt to ignore')
+        ? (state.sub ? `Snapping to marks and a ${state.sub} × ${state.sub} grid · hold Shift to suspend it`
+                     : 'Snapping to marks · hold Shift to suspend it')
         : 'Snapping off');
       hoverSnap = null;
     }
@@ -2484,27 +3222,33 @@
     saveSoon();
   }
 
-  const SUBS = [0, 2, 3, 4, 6, 8, 12, 16];
+  const SUBS = [2, 3, 4, 6, 8, 12, 16, 32, 64];
   const subWrap = document.getElementById('subs');
+  const gridOnBtn = document.getElementById('gridOn');
   SUBS.forEach((n) => {
     const b = document.createElement('button');
     b.dataset.sub = n;
-    b.textContent = n === 0 ? 'Off' : n;
-    b.title = n === 0 ? 'No alignment grid — D cycles' : `${n} × ${n} grid — D cycles`;
+    b.textContent = n;
+    b.title = `${n} × ${n} grid — D cycles`;
     b.addEventListener('click', () => setSub(n));
     subWrap.appendChild(b);
   });
 
+  /* Off is the switch above the sizes, not a size of its own. Turning
+     the grid off keeps the size it was on, so switching back on returns
+     the grid the user was working to rather than a default. */
+  gridOnBtn.addEventListener('click', () => setSub(state.sub ? 0 : state.subLast || 8));
+
   function setSub(n) {
+    if (n) state.subLast = n;
     state.sub = n;
-    for (const b of subWrap.children) b.classList.toggle('on', +b.dataset.sub === n);
     hoverSnap = null;
     // The snap switch is left exactly as the user set it. With no
     // lattice there is simply nothing to snap to, so it shows as
     // inactive rather than being flipped behind their back.
     syncToggles();
     if (state.snap) {
-      flash(n ? `Snapping to a ${n} × ${n} grid · hold Alt to ignore`
+      flash(n ? `Snapping to a ${n} × ${n} grid · hold Shift to suspend it`
               : 'Grid off — snapping to marks only');
     }
     requestDraw();
@@ -2514,6 +3258,11 @@
   function syncToggles() {
     for (const b of document.querySelectorAll('[data-toggle]')) {
       b.classList.toggle('on', !!state[b.dataset.toggle]);
+    }
+    gridOnBtn.classList.toggle('on', !!state.sub);
+    for (const b of subWrap.children) {
+      b.classList.toggle('on', +b.dataset.sub === state.sub);
+      b.disabled = !state.sub;
     }
   }
 
@@ -2528,6 +3277,8 @@
 
   document.getElementById('groupBtn').addEventListener('click', groupPicked);
   document.getElementById('ungroupBtn').addEventListener('click', ungroupPicked);
+  document.getElementById('flipXBtn').addEventListener('click', () => flipHeld('x'));
+  document.getElementById('flipYBtn').addEventListener('click', () => flipHeld('y'));
   document.getElementById('turnLeftBtn').addEventListener('click', () => turnHeld(-1));
   document.getElementById('turnRightBtn').addEventListener('click', () => turnHeld(1));
   document.getElementById('cutBtn').addEventListener('click', () => copyToSystem(copyHeld(true)));
@@ -2537,10 +3288,14 @@
   /* ---------------- palette ---------------- */
 
   const swatchWrap = document.getElementById('swatches');
+  const recentWrap = document.getElementById('recent');
+  const RECENT_MAX = 10;
   const palSel = document.getElementById('palSel');
   const palNameRow = document.getElementById('palNameRow');
   const palNameInput = document.getElementById('palName');
   const palDelBtn = document.getElementById('palDel');
+  const palRenameBtn = document.getElementById('palRename');
+  const palSaveBtn = document.getElementById('palSave');
   const hexInput = document.getElementById('hexInput');
   const hexPick = document.getElementById('hexPick');
   const mixPreview = document.getElementById('mixInk');
@@ -2560,8 +3315,12 @@
   function currentColors() { return activePalette().colors; }
   function isMine() { return !!ownPalette(state.palette); }
 
-  function freeName(base) {
-    const taken = (n) => BUILT_IN.some((p) => p.name === n) || !!ownPalette(n);
+  /* A name nothing else answers to. `mine` is the palette being renamed,
+     which does not count against itself — otherwise keeping the name and
+     changing only its case would come back as “Reds 2”. */
+  function freeName(base, mine) {
+    const taken = (n) => BUILT_IN.some((p) => p.name === n)
+      || state.palettes.some((p) => p.name === n && p !== mine);
     if (!taken(base)) return base;
     for (let i = 2; ; i++) if (!taken(`${base} ${i}`)) return `${base} ${i}`;
   }
@@ -2584,6 +3343,7 @@
     mk('Yours', state.palettes);
     palSel.value = activePalette().name;
     palDelBtn.disabled = !isMine();
+    palRenameBtn.disabled = !isMine();
     disarmDelete();
   }
 
@@ -2596,34 +3356,227 @@
       b.dataset.color = hex;
       const a = alphaOf(hex);
       const key = idx < 10 ? ` — ${idx === 9 ? 0 : idx + 1}` : '';
-      b.title = hex + (a < 255 ? ` (${Math.round((a / 255) * 100)}%)` : '') + key;
-      b.innerHTML = `<span class="well chk"><i style="background:${hex}"></i></span>`
+      b.title = hex + (!parseInk(hex) && a < 255 ? ` (${Math.round((a / 255) * 100)}%)` : '') + key;
+      b.innerHTML = `<span class="well chk"><i style="background:${inkCss(hex)}"></i></span>`
         + (mine ? '<i class="kill" title="Remove this colour">\u00d7</i>' : '');
       b.addEventListener('click', (e) => {
-        if (e.target.classList.contains('kill')) { dropSwatch(idx); return; }
+        // `closest`, not the class of the target itself: the cross is
+        // small and anything that ends up inside it still counts.
+        if (e.target.closest('.kill')) { dropSwatch(idx); return; }
         setColor(hex);
       });
+      dragSwatch(b, hex, 'palette');
       swatchWrap.appendChild(b);
     });
     for (const b of swatchWrap.children) b.classList.toggle('on', b.dataset.color === state.color);
+  }
+
+  /* The ten slots under the palette. They are drawn whether or not there
+     is anything in them, so the strip keeps its shape as it fills. */
+  function buildRecent() {
+    recentWrap.innerHTML = '';
+    for (let i = 0; i < RECENT_MAX; i++) {
+      const ink = state.recent[i];
+      if (!ink) {
+        const slot = document.createElement('span');
+        slot.className = 'slot';
+        recentWrap.appendChild(slot);
+        continue;
+      }
+      const b = document.createElement('button');
+      b.className = 'swatch';
+      b.dataset.color = ink;
+      const a = alphaOf(ink);
+      b.title = ink + (!parseInk(ink) && a < 255 ? ` (${Math.round((a / 255) * 100)}%)` : '');
+      b.innerHTML = `<span class="well chk"><i style="background:${inkCss(ink)}"></i></span>`
+        + '<i class="kill" title="Take this out">\u00d7</i>';
+      b.addEventListener('click', (e) => {
+        if (e.target.closest('.kill')) { dropRecent(i); return; }
+        setColor(ink);
+      });
+      dragSwatch(b, ink, 'recent');
+      recentWrap.appendChild(b);
+    }
+    syncRecent();
+  }
+
+  /* A colour can be dragged from either strip to the other, and lands
+     there as a copy — the one you dragged stays put. Where it came from
+     is kept here rather than read back out of the drag, which carries a
+     plain string the browser will hand to any window that will take it;
+     what matters is which of our own two strips it left, and a drop back
+     into that one is nothing at all. */
+  let dragging = null;
+
+  function dragSwatch(b, ink, from) {
+    b.draggable = true;
+    b.addEventListener('dragstart', (e) => {
+      dragging = { ink, from };
+      e.dataTransfer.effectAllowed = 'copy';
+      // A payload of some kind, or the drag will not start at all.
+      e.dataTransfer.setData('text/plain', ink);
+    });
+    b.addEventListener('dragend', () => { dragging = null; clearCarets(); });
+  }
+
+  /* Where a drop would land: before the swatch nearest the pointer, or
+     after it once the pointer is past its middle. Only the filled slots
+     are asked — the recent strip draws its empty ones so the row keeps
+     its shape, and a drop over that tail belongs at the end of what is
+     actually there, not eight places along. */
+  function dropIndex(el, e) {
+    const kids = [...el.querySelectorAll('.swatch')];
+    if (!kids.length) return 0;
+    let at = 0, best = Infinity;
+    kids.forEach((k, i) => {
+      const r = k.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const d = Math.hypot(e.clientX - cx, e.clientY - cy);
+      if (d < best) { best = d; at = e.clientX > cx ? i + 1 : i; }
+    });
+    return at;
+  }
+
+  // The caret, drawn on the swatch it would go in front of — or behind
+  // the last one, where it would go on the end.
+  function showCaret(el, at) {
+    const kids = [...el.querySelectorAll('.swatch')];
+    for (const k of kids) k.classList.remove('ins-before', 'ins-after');
+    if (at == null || !kids.length) return;
+    if (at < kids.length) kids[at].classList.add('ins-before');
+    else kids[kids.length - 1].classList.add('ins-after');
+  }
+
+  const clearCarets = () => {
+    showCaret(swatchWrap, null);
+    showCaret(recentWrap, null);
+    swatchWrap.classList.remove('drop');
+    recentWrap.classList.remove('drop');
+  };
+
+  function dropSwatches(el, mine, put) {
+    el.addEventListener('dragover', (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = dragging.from === mine ? 'move' : 'copy';
+      el.classList.add('drop');
+      showCaret(el, dropIndex(el, e));
+    });
+    el.addEventListener('dragleave', (e) => {
+      if (!el.contains(e.relatedTarget)) { el.classList.remove('drop'); showCaret(el, null); }
+    });
+    el.addEventListener('drop', (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const at = dropIndex(el, e);
+      const ink = dragging.ink;
+      clearCarets();
+      put(ink, at);
+    });
+  }
+
+  /* Into the palette at a given place. A colour already there is moved
+     rather than doubled, which is what makes dragging within the strip a
+     reordering; one from elsewhere is a copy. */
+  function putInPalette(ink, at) {
+    if (!normInk(ink)) return;
+    let pal = ownPalette(state.palette);
+    if (!pal) {
+      // Built-ins stay as printed; take a copy and work on that instead.
+      pal = { name: freeName('My ' + state.palette), colors: currentColors().slice() };
+      state.palettes.push(pal);
+      state.palette = pal.name;
+      buildPalettePicker();
+      flash(`Copied into “${pal.name}”`);
+    }
+    const had = pal.colors.indexOf(ink);
+    if (had < 0 && pal.colors.length >= 40) return flash('That palette is full');
+    const list = pal.colors.slice();
+    let k = clamp(at, 0, list.length);
+    if (had >= 0) { list.splice(had, 1); if (had < k) k -= 1; }
+    list.splice(k, 0, ink);
+    pal.colors = list;
+    buildPalettePicker();
+    buildSwatches();
+    saveSoon();
+  }
+
+  function putInRecent(ink, at) {
+    if (!normInk(ink)) return;
+    const list = state.recent.slice();
+    const had = list.indexOf(ink);
+    let k = clamp(at, 0, list.length);
+    if (had >= 0) { list.splice(had, 1); if (had < k) k -= 1; }
+    list.splice(k, 0, ink);
+    state.recent = list.slice(0, RECENT_MAX);
+    buildRecent();
+    saveSoon();
+  }
+
+  dropSwatches(swatchWrap, 'palette', putInPalette);
+  dropSwatches(recentWrap, 'recent', putInRecent);
+
+  /* Taking one out by hand. The strip keeps itself, so this was not needed
+     while everything in it arrived by being used — the eleventh colour
+     pushed the oldest off the end and that was the whole of it. Dragging
+     one in from the palette changed that: something put there on purpose
+     should be removable on purpose, rather than waiting for ten newer
+     colours to shift it. */
+  function dropRecent(idx) {
+    if (idx < 0 || idx >= state.recent.length) return;
+    state.recent = state.recent.filter((_, i) => i !== idx);
+    buildRecent();
+    saveSoon();
+  }
+
+  const syncRecent = () => {
+    for (const b of recentWrap.children) b.classList.toggle('on', b.dataset.color === state.color);
+  };
+
+  /* Ink the palette does not already hold, newest first and one of each.
+     Recorded a moment after it settles rather than on the spot: a drag
+     of the alpha passes through forty colours on its way to the one that
+     was wanted, and none of the forty is worth a slot. */
+  let rememberTimer = 0;
+  function remember(ink, asked) {
+    if (!ink) return;
+    // Ink already on the palette is a click away as it is — unless it was
+    // dragged here, which is someone asking for it in as many words.
+    if (!asked && currentColors().includes(ink)) return;
+    const next = [ink].concat(state.recent.filter((v) => v !== ink)).slice(0, RECENT_MAX);
+    if (next.join('|') === state.recent.join('|')) return;
+    state.recent = next;
+    buildRecent();
+    saveSoon();
+  }
+  function rememberSoon() {
+    clearTimeout(rememberTimer);
+    rememberTimer = setTimeout(() => remember(state.color), 700);
   }
 
   // The mixer always shows the ink in hand — except the hex field while
   // it is being typed into, which would fight the cursor.
   function syncMixer(quiet) {
     const hex = state.color;
+    const g = parseInk(hex);
     const a = alphaOf(hex);
-    mixPreview.style.background = hex;
+    mixPreview.style.background = inkCss(hex);
     hexPick.value = rgbOf(hex);
+    syncGrad(g, quiet);
     alphaInput.value = Math.round((a / 255) * 100);
     alphaVal.textContent = alphaInput.value;
     if (!quiet && document.activeElement !== hexInput) {
-      hexInput.value = hex;
+      // The field edits the stop the sweep starts from, not the text of
+      // the whole gradient — the row below owns the rest of it.
+      hexInput.value = g ? g.stops[0] : hex;
       hexInput.classList.remove('bad');
     }
   }
 
   function usePalette(name) {
+    // The name row is editing one particular palette; switching away
+    // from it would leave Rename pointed at something else entirely.
+    closeNameRow();
     state.palette = activePaletteName(name);
     buildPalettePicker();
     buildSwatches();
@@ -2633,8 +3586,11 @@
     return (ownPalette(name) || BUILT_IN.find((p) => p.name === name) || BUILT_IN[0]).name;
   }
 
-  function addSwatch() {
-    const hex = state.color;
+  // The button puts it on the end; a drop says where.
+  const addSwatch = () => addToPalette(state.color);
+
+  function addToPalette(hex) {
+    if (!normInk(hex)) return;
     let pal = ownPalette(state.palette);
     if (!pal) {
       // Built-ins stay as printed; take a copy and add to that instead.
@@ -2654,25 +3610,49 @@
 
   function dropSwatch(idx) {
     const pal = ownPalette(state.palette);
-    if (!pal || pal.colors.length <= 1) return flash('A palette keeps at least one colour');
+    // A palette may be emptied right out: it can be made that way, so
+    // there is nothing to protect by refusing the last one.
+    if (!pal || !pal.colors.length) return;
     pal.colors.splice(idx, 1);
     buildPalettePicker();
     buildSwatches();
     saveSoon();
   }
 
-  function openNameRow() {
+  /* The one row does both jobs: naming a palette that does not exist
+     yet, and renaming one that does. Which it is doing is held here, so
+     Save and Enter do not each have to work it out again. */
+  let naming = null;   // null, 'new', or the palette being renamed
+
+  function openNameRow(what) {
+    naming = what;
     palNameRow.hidden = false;
-    palNameInput.value = freeName('My palette');
+    palNameInput.value = what === 'new' ? freeName('My palette') : what.name;
+    palSaveBtn.textContent = what === 'new' ? 'Save' : 'Rename';
     palNameInput.focus();
     palNameInput.select();
   }
-  function closeNameRow() { palNameRow.hidden = true; }
+  function closeNameRow() { palNameRow.hidden = true; naming = null; }
 
-  function saveNewPalette() {
+  function commitName() {
+    if (!naming) return;
     const name = palNameInput.value.trim().slice(0, 22);
     if (!name) { palNameInput.focus(); return flash('Give the palette a name'); }
-    const pal = { name: freeName(name), colors: currentColors().slice() };
+    if (naming !== 'new') {
+      const pal = naming;
+      const was = pal.name;
+      pal.name = freeName(name, pal);
+      // The palette in use is named, not pointed at, so it has to follow.
+      if (state.palette === was) state.palette = pal.name;
+      closeNameRow();
+      buildPalettePicker();
+      saveSoon();
+      return flash(`“${was}” is now “${pal.name}”`);
+    }
+    // Empty: a new palette is somewhere to put colours, not a copy of
+    // the ones already to hand. `+` fills it, and the ten recently mixed
+    // slots underneath are where they come from.
+    const pal = { name: freeName(name), colors: [] };
     state.palettes.push(pal);
     state.palette = pal.name;
     closeNameRow();
@@ -2697,6 +3677,7 @@
       delArmed = setTimeout(disarmDelete, 3000);
       return;
     }
+    if (naming === pal) closeNameRow();
     state.palettes = state.palettes.filter((p) => p !== pal);
     state.palette = (state.palettes[0] || BUILT_IN[0]).name;
     disarmDelete();
@@ -2708,13 +3689,18 @@
 
   palSel.addEventListener('change', () => usePalette(palSel.value));
   document.getElementById('palNew').addEventListener('click', () => {
-    if (palNameRow.hidden) openNameRow(); else closeNameRow();
+    if (naming === 'new') closeNameRow(); else openNameRow('new');
   });
-  document.getElementById('palSave').addEventListener('click', saveNewPalette);
+  palRenameBtn.addEventListener('click', () => {
+    const pal = ownPalette(state.palette);
+    if (!pal) return flash('The built-in palettes keep their names');
+    if (naming === pal) closeNameRow(); else openNameRow(pal);
+  });
+  palSaveBtn.addEventListener('click', commitName);
   document.getElementById('palCancel').addEventListener('click', closeNameRow);
   palNameInput.addEventListener('keydown', (e) => {
     e.stopPropagation();
-    if (e.key === 'Enter') { e.preventDefault(); saveNewPalette(); }
+    if (e.key === 'Enter') { e.preventDefault(); commitName(); }
     if (e.key === 'Escape') { e.preventDefault(); closeNameRow(); }
   });
   palDelBtn.addEventListener('click', deletePalette);
@@ -2724,7 +3710,10 @@
   hexInput.addEventListener('input', () => {
     const hex = normHex(hexInput.value);
     hexInput.classList.toggle('bad', !hex && hexInput.value.trim() !== '');
-    if (hex) setColor(hex, true);
+    if (!hex) return;
+    // With a gradient in hand the field is its first stop, not the ink.
+    const g = parseInk(state.color);
+    setColor(g ? gradText({ ...g, stops: [hex].concat(g.stops.slice(1)) }) : hex, true);
   });
   hexInput.addEventListener('keydown', (e) => {
     e.stopPropagation();
@@ -2734,12 +3723,151 @@
   hexInput.addEventListener('blur', () => { hexInput.classList.remove('bad'); syncMixer(); });
   hexPick.addEventListener('input', () => setColor(withAlpha(hexPick.value, alphaOf(state.color))));
 
-  alphaInput.addEventListener('input', () => {
-    alphaVal.textContent = alphaInput.value;
-    setColor(withAlpha(state.color, (+alphaInput.value / 100) * 255));
+  /* ---------------- gradient ---------------- */
+
+  const gradBody = document.getElementById('gradBody');
+  const gradOn = document.getElementById('gradOn');
+  const gradInk = document.getElementById('gradInk');
+  const gradHex = document.getElementById('gradHex');
+  const gradPick = document.getElementById('gradPick');
+  const gradAlpha = document.getElementById('gradAlpha');
+  const gradAlphaVal = document.getElementById('gradAlphaVal');
+  const gradAngle = document.getElementById('gradAngle');
+  const gradAngleVal = document.getElementById('gradAngleVal');
+  const gradAnchor = document.getElementById('gradAnchor');
+
+  /* What the sweep was last set to. Switching the gradient off leaves
+     only the colour it started from, so without this, switching it back
+     on would rebuild a default and quietly throw away the angle, the
+     anchor and the colour it faded to. */
+  let lastGrad = null;
+
+  function syncGrad(g, quiet) {
+    if (g) lastGrad = g;
+    gradOn.classList.toggle('on', !!g);
+    gradBody.hidden = !g;
+    if (!g) return;
+    const end = g.stops[g.stops.length - 1];
+    gradInk.style.background = end;
+    gradPick.value = rgbOf(end);
+    gradAlpha.value = Math.round((alphaOf(end) / 255) * 100);
+    gradAlphaVal.textContent = gradAlpha.value;
+    gradAngle.value = g.deg;
+    gradAngleVal.textContent = g.deg;
+    for (const b of gradAnchor.children) b.classList.toggle('on', b.dataset.anchor === g.anchor);
+    if (!quiet && document.activeElement !== gradHex) {
+      gradHex.value = end;
+      gradHex.classList.remove('bad');
+    }
+  }
+
+  // Change one part of the sweep and leave the rest as it was.
+  function editGrad(patch) {
+    const g = parseInk(state.color);
+    if (!g) return;
+    setColor(gradText({ ...g, ...patch }));
+  }
+
+  gradOn.addEventListener('click', () => {
+    const g = parseInk(state.color);
+    // Switching it off keeps the colour it started from, so the ink does
+    // not jump. Switching it on comes back to the sweep that was there
+    // before, or — the first time — runs from the ink in hand to the
+    // same colour again, so nothing changes on the paper until the far
+    // stop is set to something.
+    if (g) return setColor(g.stops[0]);
+    const was = lastGrad;
+    setColor(gradText({
+      deg: was ? was.deg : 90,
+      anchor: was ? was.anchor : 'shape',
+      // The near stop is the ink in hand: that is what the switch was
+      // showing while the gradient was off, and it may have been changed.
+      stops: [state.color].concat(was ? was.stops.slice(1) : [state.color]),
+    }));
   });
 
-  document.getElementById('width').addEventListener('input', (e) => setWidth(+e.target.value));
+  gradHex.addEventListener('input', () => {
+    const g = parseInk(state.color);
+    const hex = normHex(gradHex.value);
+    gradHex.classList.toggle('bad', !hex && gradHex.value.trim() !== '');
+    if (!g || !hex) return;
+    editGrad({ stops: g.stops.slice(0, -1).concat([hex]) });
+  });
+  gradPick.addEventListener('input', () => {
+    const g = parseInk(state.color);
+    if (!g) return;
+    const end = g.stops[g.stops.length - 1];
+    editGrad({ stops: g.stops.slice(0, -1).concat([withAlpha(gradPick.value, alphaOf(end))]) });
+  });
+  /* The far stop's own alpha. It may go all the way to nothing, unlike
+     the ink's — a fade that stops just short leaves a visible edge where
+     it ends, and the near stop is still there to find the mark by. */
+  gradAlpha.addEventListener('input', () => {
+    gradAlphaVal.textContent = gradAlpha.value;
+    const g = parseInk(state.color);
+    if (!g) return;
+    const a = (+gradAlpha.value / 100) * 255;
+    editGrad({ stops: g.stops.slice(0, -1).concat([withAlpha(g.stops[g.stops.length - 1], a)]) });
+    sliderRun = true;
+  });
+  gradAngle.addEventListener('input', () => {
+    gradAngleVal.textContent = gradAngle.value;
+    editGrad({ deg: +gradAngle.value });
+    sliderRun = true;
+  });
+  gradAnchor.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-anchor]');
+    if (b) editGrad({ anchor: b.dataset.anchor });
+  });
+
+  /* ---------------- the sliders, with something in hand ---------------- */
+
+  /* A slider run is one step to undo, not one per pixel of travel: the
+     first change in a drag records where it started and the rest write
+     over it. `change` closes the run, which covers both the mouse coming
+     up and the arrow keys. */
+  function applyToHeld(fn) {
+    const held = heldMarks();
+    if (!held.length) return;
+    const swap = new Map();
+    for (const sh of held) {
+      const next = fn(sh);
+      if (next) swap.set(sh, next);
+    }
+    if (!swap.size) return;
+    replaceShapes(state.shapes.map((sh) => swap.get(sh) || sh), sliderRun);
+    select(picked.map((sh) => swap.get(sh) || sh));
+  }
+
+  alphaInput.addEventListener('input', () => {
+    alphaVal.textContent = alphaInput.value;
+    const a = (+alphaInput.value / 100) * 255;
+    // Each mark keeps its own colour and only loses opacity — setting
+    // them all to the ink in hand is what picking a colour is for.
+    applyToHeld((sh) => {
+      const color = withAlpha(sh.color, a);
+      const fillColor = sh.fillColor ? withAlpha(sh.fillColor, a) : undefined;
+      if (color === sh.color && fillColor === sh.fillColor) return null;
+      return Object.assign({}, sh, fillColor === undefined ? { color } : { color, fillColor });
+    });
+    setColor(withAlpha(state.color, a), false, true);
+    sliderRun = true;
+  });
+
+  document.getElementById('width').addEventListener('input', (e) => {
+    const w = clamp(Math.round(+e.target.value), 1, 64);
+    setWidth(w);
+    applyToHeld((sh) => (sh.layer === 'stroke' && !sh.filled && sh.width !== w
+      ? Object.assign({}, sh, { width: w })
+      : null));
+    sliderRun = true;
+  });
+
+  // Letting go of any slider closes its run, so the next one is its own
+  // step to undo.
+  for (const el of [alphaInput, document.getElementById('width'), gradAlpha, gradAngle]) {
+    el.addEventListener('change', () => { sliderRun = false; });
+  }
   for (const b of document.querySelectorAll('[data-toggle]')) {
     b.addEventListener('click', () => toggle(b.dataset.toggle));
   }
@@ -2839,8 +3967,27 @@
     return true;
   }
 
+  /* A new drawing starts where a first one would: the same symmetry, the
+     same grid, the same ink. Anything a drawing carries is a setting of
+     that drawing and goes with it — but the palettes and the recently
+     mixed strip belong to the table rather than to any one picture, so
+     they stay put. The view is put back too, since a clean tile at the
+     zoom and corner of the last one is not a clean start. */
   function startNew(quiet) {
     closeNewPrompt();
+    state.pattern = { n: DEFAULTS.pattern.n, cells: DEFAULTS.pattern.cells.slice() };
+    buildPatternGrid();
+    state.grid = DEFAULTS.grid;
+    state.arrows = DEFAULTS.arrows;
+    state.snap = DEFAULTS.snap;
+    state.subLast = DEFAULTS.subLast;
+    state.filled = DEFAULTS.filled;
+    setDiag(DEFAULTS.diag, true);
+    setWidth(DEFAULTS.width);
+    setColor(DEFAULTS.color, false, true);
+    setSub(DEFAULTS.sub);
+    state.view = { ...DEFAULTS.view };
+    syncToggles();
     adoptShapes([]);
     setFile(null, '');
     setDirty(false);
@@ -2884,7 +4031,7 @@
 
   /* ---------------- the drawing as a file ----------------
 
-     A .tessera.json holds the artwork and nothing else: the marks, the
+     A .tesselate.json holds the artwork and nothing else: the marks, the
      symmetry block they repeat under, and the three plane settings that
      change what the pattern looks like. Which tool is in hand, the
      lattice, the palette — none of that belongs to the drawing.
@@ -2896,12 +4043,12 @@
      (The pattern is lifted from swimlane-studio, which does the same
      for its diagram source.) */
 
-  const FORMAT = 'tessera';
+  const FORMAT = 'tesselate';
   const fileNameEl = document.getElementById('fileName');
   let fileHandle = null;
   let dirty = false;
 
-  const HANDLE_DB = 'tessera';
+  const HANDLE_DB = 'tesselate';
   const HANDLE_STORE = 'handles';
   const HANDLE_KEY = 'current-file';
 
@@ -2963,21 +4110,30 @@
       saved: new Date().toISOString(),
       tile: T,
       pattern: state.pattern,
-      plane: { clip: state.clip, wrap: state.wrap, diag: state.diag },
+      plane: {
+        grid: state.grid, arrows: state.arrows, snap: state.snap,
+        sub: state.sub, subLast: state.subLast, diag: state.diag,
+      },
+      ink: { color: state.color, width: state.width, filled: state.filled },
+      palette: {
+        name: state.palette,
+        palettes: state.palettes,
+        recent: state.recent,
+      },
     };
     const lines = Object.entries(head).map(([k, v]) => ` ${JSON.stringify(k)}: ${JSON.stringify(v)}`);
     const marks = state.shapes.map((sh) => '  ' + JSON.stringify(sh)).join(',\n');
     return '{\n' + lines.join(',\n') + ',\n "shapes": [\n' + marks + '\n ]\n}\n';
   }
 
-  const JSON_TYPES = [{ description: 'Tessera drawing', accept: { 'application/json': ['.json'] } }];
+  const JSON_TYPES = [{ description: 'Tesselate drawing', accept: { 'application/json': ['.json'] } }];
   /* The name a save should carry. With a handle it is that file's. With
      none — no picker, so the drawing goes to the downloads folder — Save
      keeps offering the name it last used, which is as near as a download
      gets to writing back over something; Save as asks for a fresh one. */
   let lastName = '';
   const suggestName = (asNew) => (fileHandle && fileHandle.name)
-    || (!asNew && lastName) || `tessera-${stamp()}.json`;
+    || (!asNew && lastName) || `tesselate-${stamp()}.json`;
 
   async function saveProject(asNew) {
     const text = projectJson();
@@ -3024,9 +4180,39 @@
       state.pattern = p;
       buildPatternGrid();
     }
+    /* A drawing carries the bench it was made at as well as the marks:
+       the grid it was drawn to, the ink in hand, and the colours mixed
+       for it — which are no use to it sitting in another table's
+       storage. Everything is checked on the way in, and anything a file
+       does not carry is left as it is, so older ones still open. */
     const plane = d.plane || {};
-    for (const f of ['clip', 'wrap']) if (typeof plane[f] === 'boolean') state[f] = plane[f];
+    for (const f of ['grid', 'arrows', 'snap']) if (typeof plane[f] === 'boolean') state[f] = plane[f];
+    if (plane.sub === 0 || SUBS.includes(plane.sub)) state.sub = plane.sub;
+    if (SUBS.includes(plane.subLast)) state.subLast = plane.subLast;
     if (DIAG_MODES.some(([id]) => id === plane.diag)) setDiag(plane.diag, true);
+
+    const pal = d.palette || {};
+    if (Array.isArray(pal.palettes)) {
+      state.palettes = pal.palettes
+        .filter((q) => q && typeof q.name === 'string' && Array.isArray(q.colors))
+        .slice(0, 40)
+        .map((q) => ({ name: q.name.slice(0, 22), colors: q.colors.map(normInk).filter(Boolean).slice(0, 40) }))
+        .filter((q) => q.name);
+    }
+    if (Array.isArray(pal.recent)) {
+      state.recent = pal.recent.map(normInk).filter(Boolean).slice(0, RECENT_MAX);
+    }
+    if (typeof pal.name === 'string') state.palette = pal.name;
+    buildPalettePicker();
+    buildSwatches();
+    buildRecent();
+
+    const ink = d.ink || {};
+    if (typeof ink.filled === 'boolean') state.filled = ink.filled;
+    if (typeof ink.width === 'number') setWidth(ink.width);
+    if (normInk(ink.color)) setColor(ink.color, false, true);
+
+    setSub(state.sub);
     syncToggles();
 
     cancelDraft();
@@ -3068,21 +4254,25 @@
 
   /* Where there is no picker the button is not saving, it is
      downloading, and it should say so rather than promise a file to
-     write back to that this browser cannot give us. */
+     write back to that this browser cannot give us. Save as goes with
+     it: with nowhere to write back to, every download is already a new
+     file, so the second button would only do what the first does. */
   if (!window.showSaveFilePicker) {
-    document.getElementById('loadJson').title =
-      'Open a drawing — ⌘O · from the file chooser';
-    const s1 = document.getElementById('saveJson');
-    s1.textContent = 'Download';
-    s1.title = 'Download the drawing — ⌘S · this browser has no file picker, '
-      + 'so it goes to your downloads under the name it last used';
-    const s2 = document.getElementById('saveJsonAs');
-    s2.textContent = 'Download as';
-    s2.title = 'Download the drawing under a new name — ⇧⌘S · this browser has '
-      + 'no file picker';
+    // Only the words change: the glyphs are the buttons now, and writing
+    // over them would leave the toolbar blank.
+    const say = (id, label, title) => {
+      const b = document.getElementById(id);
+      b.setAttribute('aria-label', label);
+      b.title = title;
+    };
+    say('loadJson', 'Open a drawing', 'Open a drawing — ⌘O · from the file chooser');
+    say('saveJson', 'Download',
+      'Download the drawing — ⌘S · this browser has no file picker, '
+      + 'so it goes to your downloads under the name it last used');
+    document.getElementById('saveJsonAs').hidden = true;
     // The exports drop a file in the same place, so they say the same word.
-    document.getElementById('exportSvg').textContent = 'Download SVG';
-    document.getElementById('exportPng').textContent = 'Download PNG';
+    say('exportSvg', 'Download SVG', 'Download the tiling as an SVG');
+    say('exportPng', 'Download PNG', 'Download the tiling as a PNG');
   }
 
   document.getElementById('loadJson').addEventListener('click', loadProject);
@@ -3091,7 +4281,7 @@
 
   document.getElementById('exportSvg').addEventListener('click', () => {
     if (!state.shapes.length) return flash('Nothing to save yet');
-    download(`tessera-${stamp()}.svg`, new Blob([buildSvg()], { type: 'image/svg+xml' }));
+    download(`tesselate-${stamp()}.svg`, new Blob([buildSvg()], { type: 'image/svg+xml' }));
     flash('SVG saved');
   });
 
@@ -3111,7 +4301,7 @@
 
   document.getElementById('exportPng').addEventListener('click', () => {
     cleanPng().then((b) => {
-      download(`tessera-${stamp()}.png`, b);
+      download(`tesselate-${stamp()}.png`, b);
       flash('PNG saved — marks only, on a clear ground');
     }, () => flash('The image could not be made'));
   });
@@ -3145,6 +4335,44 @@
     const [ja, jb] = span(j0, j1);
     const w = (ib - ia + 1) * T, h = (jb - ja + 1) * T;
 
+    /* A gradient goes into the file as a def the marks point at. The
+       coordinates are the tile's own, so one def serves every copy the
+       sheet instances — the sweep repeats with the square, exactly as it
+       does on screen. */
+    const defs = [];
+    const gradOf = new Map();
+    function svgInk(attr, ink, sh) {
+      const g = parseInk(ink);
+      if (!g) return svgPaint(attr, ink);
+      let box = { x0: 0, y0: 0, x1: T, y1: T };
+      if (g.anchor === 'shape') {
+        const b = shapeBBox(sh);
+        const pad = sh.layer === 'stroke' && !sh.filled ? (sh.width || 0) / 2 : 0;
+        if (b) box = { x0: b.x0 - pad, y0: b.y0 - pad, x1: b.x1 + pad, y1: b.y1 + pad };
+      }
+      const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2;
+      const t = (g.deg * Math.PI) / 180, ux = Math.cos(t), uy = Math.sin(t);
+      const half = (Math.abs((box.x1 - box.x0) * ux) + Math.abs((box.y1 - box.y0) * uy)) / 2;
+      if (!(half > 0.01)) return svgPaint(attr, g.stops[0]);
+      const num = (v) => +v.toFixed(2);
+      const key = `${g.deg}|${g.stops.join(',')}|${num(cx)}|${num(cy)}|${num(half)}`;
+      let id = gradOf.get(key);
+      if (!id) {
+        id = `g${gradOf.size + 1}`;
+        gradOf.set(key, id);
+        const last = g.stops.length - 1;
+        const stops = g.stops.map((c, i) => {
+          const a = alphaOf(c);
+          return `<stop offset="${+(i / last).toFixed(4)}" stop-color="${rgbOf(c)}"`
+            + (a < 255 ? ` stop-opacity="${+(a / 255).toFixed(4)}"` : '') + '/>';
+        }).join('');
+        defs.push(`<linearGradient id="${id}" gradientUnits="userSpaceOnUse"`
+          + ` x1="${num(cx - ux * half)}" y1="${num(cy - uy * half)}"`
+          + ` x2="${num(cx + ux * half)}" y2="${num(cy + uy * half)}">${stops}</linearGradient>`);
+      }
+      return `${attr}="url(#${id})"`;
+    }
+
     const body = [];
     {
       for (const entry of paintOrder(state.shapes)) {
@@ -3153,19 +4381,19 @@
         const d = pathData(s);
         if (!d) continue;
         if (entry.inside) {
-          body.push(`<path d="${d}" ${svgPaint('fill', s.fillColor)}/>`);
+          body.push(`<path d="${d}" ${svgInk('fill', s.fillColor, s)}/>`);
           continue;
         }
-        if (s.layer === 'fill') body.push(`<path d="${d}" ${svgPaint('fill', s.color)} fill-rule="evenodd"/>`);
-        else if (s.filled) body.push(`<path d="${d}" ${svgPaint('fill', s.color)}/>`);
+        if (s.layer === 'fill') body.push(`<path d="${d}" ${svgInk('fill', s.color, s)} fill-rule="evenodd"/>`);
+        else if (s.filled) body.push(`<path d="${d}" ${svgInk('fill', s.color, s)}/>`);
         else {
           const [cap, join] = capsOf(s.kind);
-          body.push(`<path d="${d}" fill="none" ${svgPaint('stroke', s.color)}`
+          body.push(`<path d="${d}" fill="none" ${svgInk('stroke', s.color, s)}`
             + ` stroke-width="${s.width}" stroke-linecap="${cap}" stroke-linejoin="${join}"/>`);
           if (ROUNDABLE[s.kind]) {
             for (const p of endpointsOf(s)) {
               if (!junctions.has(jkey(p))) continue;
-              body.push(`<circle cx="${p.x}" cy="${p.y}" r="${s.width / 2}" ${svgPaint('fill', s.color)}/>`);
+              body.push(`<circle cx="${p.x}" cy="${p.y}" r="${s.width / 2}" ${svgInk('fill', s.color, s)}/>`);
             }
           }
         }
@@ -3177,7 +4405,7 @@
       for (let i = ia; i <= ib; i++) {
         const r = rotAt(state.pattern, i, j);
         const t = `translate(${i * T} ${j * T})` + (r ? ` rotate(${r * 90} ${T / 2} ${T / 2})` : '');
-        uses.push(`<use href="#tile" xlink:href="#tile" transform="${t}"${state.clip ? ' clip-path="url(#tileclip)"' : ''}/>`);
+        uses.push(`<use href="#tile" xlink:href="#tile" transform="${t}"/>`);
       }
     }
 
@@ -3185,7 +4413,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      width="${w / 2}" height="${h / 2}" viewBox="${ia * T} ${ja * T} ${w} ${h}">
   <defs>
-    <clipPath id="tileclip"><rect x="0" y="0" width="${T}" height="${T}"/></clipPath>
+    ${defs.join('\n    ')}
     <g id="tile">
       ${body.join('\n      ')}
     </g>
@@ -3197,7 +4425,8 @@
 
   /* ---------------- persistence ---------------- */
 
-  const KEY = 'tessera.v1';
+  const KEY = 'tesselate.v1';
+  const WAS_KEY = 'tessera.v1';   // what the table was called before
   let saveTimer = 0;
   function saveSoon() {
     clearTimeout(saveTimer);
@@ -3206,9 +4435,9 @@
         localStorage.setItem(KEY, JSON.stringify({
           shapes: state.shapes, pattern: state.pattern, tool: state.tool,
           color: state.color, width: state.width, filled: state.filled,
-          palette: state.palette, palettes: state.palettes,
-          grid: state.grid, clip: state.clip, wrap: state.wrap,
-          snap: state.snap, sub: state.sub, diag: state.diag,
+          palette: state.palette, palettes: state.palettes, recent: state.recent,
+          grid: state.grid, arrows: state.arrows, snap: state.snap, sub: state.sub,
+          subLast: state.subLast, diag: state.diag,
         }));
       } catch (err) { /* private mode, quota — not worth interrupting for */ }
     }, 400);
@@ -3216,7 +4445,11 @@
 
   function restore() {
     let d = null;
-    try { d = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (err) { d = null; }
+    // Read what the table was called before if it has not been written
+    // under the new name yet, so a rename does not lose the drawing.
+    try {
+      d = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem(WAS_KEY) || 'null');
+    } catch (err) { d = null; }
     if (!d) return;
     if (Array.isArray(d.shapes)) state.shapes = d.shapes.filter((s) => s && s.kind);
     adoptIds(state.shapes);
@@ -3228,19 +4461,24 @@
         .slice(0, 40)
         .map((p) => ({
           name: p.name.slice(0, 22),
-          colors: p.colors.map(normHex).filter(Boolean).slice(0, 40),
+          colors: p.colors.map(normInk).filter(Boolean).slice(0, 40),
         }))
-        .filter((p) => p.name && p.colors.length);
+        .filter((p) => p.name);
+    }
+    if (Array.isArray(d.recent)) {
+      state.recent = d.recent.map(normInk).filter(Boolean).slice(0, RECENT_MAX);
     }
     if (typeof d.palette === 'string') state.palette = d.palette;
-    if (normHex(d.color)) state.color = normHex(d.color);
+    if (normInk(d.color)) state.color = normInk(d.color);
     if (typeof d.width === 'number') state.width = clamp(d.width, 1, 64);
-    for (const f of ['filled', 'grid', 'clip', 'wrap', 'snap']) {
+    for (const f of ['filled', 'grid', 'arrows', 'snap']) {
       if (typeof d[f] === 'boolean') state[f] = d[f];
     }
     if (typeof d.diag === 'boolean') state.diag = d.diag ? 'plane' : 'off';
     else if (DIAG_MODES.some(([id]) => id === d.diag)) state.diag = d.diag;
-    if (SUBS.includes(d.sub)) state.sub = d.sub;
+    if (d.sub === 0 || SUBS.includes(d.sub)) state.sub = d.sub;
+    if (SUBS.includes(d.subLast)) state.subLast = d.subLast;
+    else if (state.sub) state.subLast = state.sub;
     if (Object.values(TOOL_KEYS).includes(d.tool)) state.tool = d.tool;
   }
 
@@ -3253,6 +4491,7 @@
   setTool(state.tool);
   buildPalettePicker();
   buildSwatches();
+  buildRecent();
   setColor(state.color);
   setWidth(state.width);
   syncToggles();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Tessera</title>
+<title>Tesselate</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -12,6 +12,47 @@
 <body>
 
 <aside class="rail">
+
+  <section class="panel bar">
+    <div class="toolbar">
+      <button id="undo" title="Undo — ⌘Z" aria-label="Undo">
+        <svg viewBox="0 0 24 24"><path d="M4.7 9.3h9.4a5.2 5.2 0 1 1 0 10.4H7.6"/><path d="M9.1 4.6L4.2 9.3l4.9 4.7"/></svg>
+      </button>
+      <button id="redo" title="Redo — ⇧⌘Z" aria-label="Redo">
+        <svg viewBox="0 0 24 24"><path d="M19.3 9.3H9.9a5.2 5.2 0 1 0 0 10.4h6.5"/><path d="M14.9 4.6l4.9 4.7-4.9 4.7"/></svg>
+      </button>
+      <button id="newDrawing" class="gap" title="Start a new drawing" aria-label="New drawing">
+        <svg viewBox="0 0 24 24"><path d="M13.5 3.2H6.6a1.4 1.4 0 0 0-1.4 1.4v14.8a1.4 1.4 0 0 0 1.4 1.4h10.8a1.4 1.4 0 0 0 1.4-1.4V8.4z"/><path d="M13.5 3.2v5.2h5.3"/></svg>
+      </button>
+      <button id="loadJson" title="Open a drawing — ⌘O" aria-label="Open a drawing">
+        <svg viewBox="0 0 24 24"><path d="M3.4 18.6V6.2a1 1 0 0 1 1-1h4.7l1.9 2.3h8.1a1 1 0 0 1 1 1v1.6"/><path d="M3.4 18.6l2.5-8.5h16L19.4 18a1 1 0 0 1-1 .7H4.4a1 1 0 0 1-1-.1z"/></svg>
+      </button>
+      <button id="saveJson" title="Save the drawing back to its file — ⌘S" aria-label="Save">
+        <svg viewBox="0 0 24 24"><path d="M4.4 4.4h12.3l3.1 3.1v12.1a.8.8 0 0 1-.8.8H4.4a.8.8 0 0 1-.8-.8V5.2a.8.8 0 0 1 .8-.8z"/><path d="M7.6 4.4v5.3h8V4.4"/><path d="M7.6 20.4v-6.2h8.8v6.2"/></svg>
+      </button>
+      <button id="saveJsonAs" title="Save the drawing to a new file — ⇧⌘S" aria-label="Save as">
+        <svg viewBox="0 0 24 24"><path d="M4.4 4.4h10.2l3.1 3.1v5.1"/><path d="M4.4 4.4v15.2a.8.8 0 0 0 .8.8h6.3"/><path d="M7.6 4.4v5.3h6.4V4.4"/><path d="M17.9 15.4v6.2M14.8 18.5h6.2"/></svg>
+      </button>
+      <button id="exportSvg" class="gap" title="Save the tiling as an SVG" aria-label="Save SVG">
+        <svg viewBox="0 0 24 24"><path d="M4.2 3.4h12.5l3.1 3.1v14a.9.9 0 0 1-.9.9H4.2a.9.9 0 0 1-.9-.9V4.3a.9.9 0 0 1 .9-.9z"/><path d="M8.2 3.4v4.1h7V3.4"/><text x="12" y="18.6" text-anchor="middle" textLength="16.4" lengthAdjust="spacingAndGlyphs">.svg</text></svg>
+      </button>
+      <button id="exportPng" title="Save the tiling as a PNG" aria-label="Save PNG">
+        <svg viewBox="0 0 24 24"><path d="M4.2 3.4h12.5l3.1 3.1v14a.9.9 0 0 1-.9.9H4.2a.9.9 0 0 1-.9-.9V4.3a.9.9 0 0 1 .9-.9z"/><path d="M8.2 3.4v4.1h7V3.4"/><text x="12" y="18.6" text-anchor="middle" textLength="16.4" lengthAdjust="spacingAndGlyphs">.png</text></svg>
+      </button>
+      <button id="copyPng" title="Copy the tiling to the clipboard as a PNG" aria-label="Copy PNG">
+        <svg viewBox="0 0 24 24"><rect x="8.4" y="8.4" width="12" height="12" rx="1.3"/><path d="M15.6 5.2H5.2a1.3 1.3 0 0 0-1.3 1.3v10.4"/></svg>
+      </button>
+    </div>
+    <p class="filename mono" id="fileName" hidden></p>
+    <div class="confirm" id="newConfirm" hidden>
+      <p>Do you want to save your changes?</p>
+      <div class="grid3">
+        <button class="wide fatal" id="newYes">Yes</button>
+        <button class="wide" id="newNo">No</button>
+        <button class="wide" id="newCancel">Cancel</button>
+      </div>
+    </div>
+  </section>
 
   <section class="panel">
     <div class="label"><span>Tool</span><i></i></div>
@@ -49,18 +90,23 @@
         <em>Erase</em>
       </button>
     </div>
+    <button class="wide toggle" data-toggle="snap" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
     <div class="grid2 binders">
       <button class="wide" id="groupBtn" title="Bind what you are holding into one thing — G or ⌘G" disabled>Group</button>
       <button class="wide" id="ungroupBtn" title="Let it loose again — U or ⇧⌘G" disabled>Ungroup</button>
     </div>
-    <div class="grid2 binders">
-      <button class="wide turn" id="turnLeftBtn" title="Turn what you are holding 45° anticlockwise" disabled>
+    <div class="grid4 binders">
+      <button class="wide turn" id="turnLeftBtn" title="Turn what you are holding 45° anticlockwise" aria-label="Turn anticlockwise" disabled>
         <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-        <span>45°</span>
       </button>
-      <button class="wide turn" id="turnRightBtn" title="Turn what you are holding 45° clockwise" disabled>
+      <button class="wide turn" id="turnRightBtn" title="Turn what you are holding 45° clockwise" aria-label="Turn clockwise" disabled>
         <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-        <span>45°</span>
+      </button>
+      <button class="wide turn" id="flipXBtn" title="Flip what you are holding left to right" aria-label="Flip horizontally" disabled>
+        <svg viewBox="0 0 24 24"><path d="M12 2.6v18.8"/><path d="M9.1 6.9L3.4 12l5.7 5.1z"/><path d="M14.9 6.9L20.6 12l-5.7 5.1z"/></svg>
+      </button>
+      <button class="wide turn" id="flipYBtn" title="Flip what you are holding top to bottom" aria-label="Flip vertically" disabled>
+        <svg viewBox="0 0 24 24"><path d="M2.6 12h18.8"/><path d="M6.9 9.1L12 3.4l5.1 5.7z"/><path d="M6.9 14.9L12 20.6l5.1-5.7z"/></svg>
       </button>
     </div>
     <div class="grid3 binders">
@@ -71,43 +117,14 @@
   </section>
 
   <section class="panel">
-    <div class="label"><span>Table</span><i></i></div>
-    <div class="grid2">
-      <button class="iconbtn" id="undo" title="Undo — ⌘Z" aria-label="Undo">
-        <svg viewBox="0 0 24 24"><path d="M4.7 9.3h9.4a5.2 5.2 0 1 1 0 10.4H7.6"/><path d="M9.1 4.6L4.2 9.3l4.9 4.7"/></svg>
-      </button>
-      <button class="iconbtn" id="redo" title="Redo — ⇧⌘Z" aria-label="Redo">
-        <svg viewBox="0 0 24 24"><path d="M19.3 9.3H9.9a5.2 5.2 0 1 0 0 10.4h6.5"/><path d="M14.9 4.6l4.9 4.7-4.9 4.7"/></svg>
-      </button>
-    </div>
-    <div class="grid2 files">
-      <button class="wide" id="newDrawing" title="Start a new drawing">New</button>
-      <button class="wide" id="loadJson" title="Open a drawing — ⌘O">Load</button>
-      <button class="wide" id="saveJson" title="Save the drawing back to its file — ⌘S">Save</button>
-      <button class="wide" id="saveJsonAs" title="Save the drawing to a new file — ⇧⌘S">Save as</button>
-    </div>
-    <p class="filename mono" id="fileName" hidden></p>
-    <div class="confirm" id="newConfirm" hidden>
-      <p>Do you want to save your changes?</p>
-      <div class="grid3">
-        <button class="wide fatal" id="newYes">Yes</button>
-        <button class="wide" id="newNo">No</button>
-        <button class="wide" id="newCancel">Cancel</button>
-      </div>
-    </div>
-    <div class="grid2 exports">
-      <button class="wide" id="exportSvg">Save SVG</button>
-      <button class="wide" id="exportPng">Save PNG</button>
-      <button class="wide span2" id="copyPng" title="Copy the tiling to the clipboard as a PNG">Copy PNG</button>
-    </div>
-  </section>
-
-  <section class="panel">
     <div class="label"><span>Palette</span><i></i></div>
 
     <div class="pal-bar">
       <div class="sel"><select id="palSel" aria-label="Palette"></select></div>
-      <button class="mini" id="palNew" title="Save these colours as a new named palette">New</button>
+      <button class="mini" id="palNew" title="Start a new palette of your own, empty">New</button>
+      <button class="mini pen" id="palRename" title="Rename this palette" aria-label="Rename palette">
+        <svg viewBox="0 0 24 24"><path d="M4.2 19.8l3.9-1.1L20.6 6.4a2.1 2.1 0 0 0-3-3L5.3 15.9z"/><path d="M15.6 5.4l3 3"/></svg>
+      </button>
       <button class="mini" id="palDel" title="Delete this palette">Del</button>
     </div>
 
@@ -118,6 +135,7 @@
     </div>
 
     <div class="swatches" id="swatches"></div>
+    <div class="recent" id="recent" aria-label="Recently mixed"></div>
 
     <div class="mixer">
       <span class="swatch-preview"><span class="well chk"><i id="mixInk"></i></span></span>
@@ -135,13 +153,42 @@
 
     <div class="row slide">
       <span class="mono tiny">Alpha</span>
-      <input type="range" id="alpha" min="0" max="100" step="1" value="100" aria-label="Opacity">
+      <input type="range" id="alpha" min="1" max="100" step="1" value="100" aria-label="Opacity">
       <span class="mono num" id="alphaVal">100</span>
     </div>
     <div class="row slide">
       <span class="mono tiny">Width</span>
       <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke weight">
       <span class="mono num" id="widthVal">9</span>
+    </div>
+
+    <button class="wide toggle" id="gradOn" title="Fade the ink from one colour to another"><span class="tick"></span><span>Gradient</span></button>
+    <div class="grad-body" id="gradBody" hidden>
+      <div class="mixer">
+        <span class="swatch-preview"><span class="well chk"><i id="gradInk"></i></span></span>
+        <input type="text" id="gradHex" class="mono hex" spellcheck="false" autocomplete="off" maxlength="9" aria-label="Colour it fades to" placeholder="#rrggbbaa">
+        <label class="pick" title="Choose the colour it fades to">
+          <input type="color" id="gradPick" aria-label="End colour picker">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8z" fill="currentColor" stroke="none"/></svg>
+        </label>
+      </div>
+      <div class="row slide">
+        <span class="mono tiny">Alpha</span>
+        <input type="range" id="gradAlpha" min="0" max="100" step="1" value="100" aria-label="Opacity of the colour it fades to">
+        <span class="mono num" id="gradAlphaVal">100</span>
+      </div>
+      <div class="row slide">
+        <span class="mono tiny">Angle</span>
+        <input type="range" id="gradAngle" min="0" max="355" step="5" value="90" aria-label="Gradient angle">
+        <span class="mono num" id="gradAngleVal">90</span>
+      </div>
+      <div class="sub-row">
+        <span class="mono tiny">Across</span>
+        <div class="modes" id="gradAnchor">
+          <button data-anchor="shape" title="The sweep runs across each mark's own bounds, so every copy of it looks the same">Mark</button>
+          <button data-anchor="tile" title="The sweep runs across the square, so a whole figure fades together — and still repeats exactly">Tile</button>
+        </div>
+      </div>
     </div>
 
     <button class="wide toggle" data-toggle="filled" id="filledBtn">
@@ -151,34 +198,28 @@
 
   <section class="panel">
     <div class="label"><span>Plane</span><i></i></div>
-    <div class="grid2 toggles2">
-      <button class="wide toggle" data-toggle="grid" title="The tile grid across the plane — T"><span class="tick"></span><span>Tile rules</span></button>
-      <button class="wide toggle" data-toggle="clip"><span class="tick"></span><span>Clip tile</span></button>
-      <button class="wide toggle" data-toggle="wrap"><span class="tick"></span><span>Wrap edges</span></button>
-      <button class="wide toggle" data-toggle="snap" title="Snap to the alignment grid — S (hold Alt to ignore)"><span class="tick"></span><span>Snap to grid</span></button>
-    </div>
+    <button class="wide toggle" data-toggle="grid" title="Show the tile grid across the plane — T"><span class="tick"></span><span>Show tiles</span></button>
+    <button class="wide toggle" id="gridOn" title="Show the alignment grid — D cycles its size">
+      <span class="tick"></span><span>Show grid</span>
+    </button>
+    <div class="subs" id="subs"></div>
     <div class="sub-row">
-      <span class="mono tiny">Grid</span>
-      <div class="subs" id="subs"></div>
-    </div>
-    <div class="sub-row">
-      <span class="mono tiny">Frame</span>
+      <span class="mono tiny">Grid type</span>
       <div class="modes" id="diagModes"></div>
     </div>
   </section>
 
-  <details class="panel fold" id="symmetryPanel">
-    <summary class="label"><span>Symmetry</span><i></i><b class="fold-mark" aria-hidden="true"></b></summary>
-    <div class="fold-body">
-      <div class="chips" id="presets"></div>
-      <div class="row block-row">
-        <span class="mono tiny">Block</span>
-        <div class="sizes" id="sizes"></div>
-      </div>
-      <div class="pattern-grid" id="patternGrid"></div>
-      <p class="note">Click a tile to turn it a quarter. The upright arrow is your drawing surface.</p>
+  <section class="panel" id="symmetryPanel">
+    <div class="label"><span>Symmetry</span><i></i></div>
+    <div class="chips" id="presets"></div>
+    <div class="row block-row">
+      <span class="mono tiny">Block</span>
+      <div class="sizes" id="sizes"></div>
     </div>
-  </details>
+    <div class="pattern-grid" id="patternGrid"></div>
+    <p class="note">Click a tile to turn it a quarter. The upright arrow is your drawing surface.</p>
+    <button class="wide toggle" data-toggle="arrows" title="Mark each square on the plane with the way it has been turned"><span class="tick"></span><span>Show orientation</span></button>
+  </section>
 
 </aside>
 

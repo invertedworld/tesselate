@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------
-   Tessera — dark grey bench, white paper, one vermilion accent. The
+   Tesselate — dark grey bench, white paper, one vermilion accent. The
    tools recede so the work does not have to compete with them; all
    colour is in the artwork, none in the room around it.
 
@@ -79,43 +79,7 @@ body { display: flex; }
 }
 .label i { flex: 1; height: 1px; background: var(--ink-12); }
 
-/* ---------------- folding panel ---------------- */
-
-.fold { padding-bottom: 0; }
-.fold:not([open]) { padding-bottom: 12px; }
-.fold > summary {
-  cursor: pointer;
-  list-style: none;
-  padding: 1px 0 2px;
-  user-select: none;
-  transition: color 0.16s ease;
-}
-.fold > summary::-webkit-details-marker { display: none; }
-.fold > summary:hover,
-.fold[open] > summary { color: var(--ink); }
-.fold:not([open]) > summary { margin-bottom: 1px; }
-.fold > summary > i { transition: background 0.16s ease; }
-.fold > summary:hover > i { background: var(--ink-22); }
-
-.fold-mark {
-  position: relative;
-  width: 9px;
-  height: 9px;
-  flex: 0 0 9px;
-}
-.fold-mark::before,
-.fold-mark::after {
-  content: "";
-  position: absolute;
-  background: currentColor;
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
-.fold-mark::before { left: 0; right: 0; top: 4px; height: 1px; }
-.fold-mark::after { top: 0; bottom: 0; left: 4px; width: 1px; }
-.fold[open] .fold-mark::after { transform: scaleY(0); opacity: 0; }
-
-.fold-body { padding-bottom: 13px; }
-.fold[open] > .fold-body { animation: unfold 0.2s ease both; }
+/* The New-confirm block eases in the same way the symmetry panel used to. */
 @keyframes unfold {
   from { opacity: 0; transform: translateY(-3px); }
   to { opacity: 1; transform: none; }
@@ -184,15 +148,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   text-align: left;
 }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
 .grid2 .wide { justify-content: center; text-align: center; }
-.grid2 .span2 { grid-column: 1 / -1; }
 .grid2 + .grid2, .filename + .grid2, .confirm + .grid2 { margin-top: 6px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .grid3 .wide { justify-content: center; text-align: center; padding: 8px 4px; }
-.exports { margin-top: 12px; }   /* the drawing's own file, then what comes off it */
 .binders { margin-top: 8px; }
 .binders + .binders { margin-top: 6px; }
-.wide.turn { gap: 6px; }
+.wide.turn { justify-content: center; padding: 7px 0; }
 .wide.turn svg {
   width: 15px;
   height: 15px;
@@ -229,22 +192,40 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .filename.dirty::before { opacity: 1; }
 
-.iconbtn {
+/* The table's own controls, at the top where the work starts. They
+   share the row between them, so it holds however many there are, and a
+   little air marks off the three groups: history, file, export. */
+.toolbar { display: flex; gap: 3px; }
+.toolbar > button {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 28px;
+  padding: 0;
   display: grid;
   place-items: center;
-  padding: 7px 0;
 }
-.iconbtn svg {
-  width: 19px;
-  height: 19px;
+.toolbar > button.gap { margin-left: 7px; }
+.toolbar > button svg {
+  width: 17px;
+  height: 17px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.35;
+  stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.iconbtn:disabled { opacity: 0.3; cursor: default; }
-.iconbtn:disabled:hover { background: transparent; }
+/* The two exports say what they write, on the same disk the save uses.
+   `textLength` stretches the letters to the disk's own width, so they
+   fill it whatever the font turns out to be. */
+.toolbar > button svg text {
+  fill: currentColor;
+  stroke: none;
+  font-family: var(--mono);
+  font-size: 8.4px;
+  font-weight: 600;
+}
+.toolbar > button:disabled { opacity: 0.3; cursor: default; }
+.toolbar > button:disabled:hover { background: transparent; }
 
 /* Clear asks first, in the rail rather than in a browser box. */
 .confirm {
@@ -272,15 +253,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .wide.fatal:hover { background: #b9351b; border-color: #b9351b; }
 
 .toggle { margin-top: 6px; }
-.toggles2 { gap: 5px; }
-.toggles2 .toggle {
-  margin-top: 0;
-  padding: 8px 7px;
-  gap: 7px;
-  font-size: 9.5px;
-  white-space: nowrap;
-}
-
 .sub-row {
   display: flex;
   flex-wrap: wrap;
@@ -288,12 +260,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   gap: 7px;
   margin-top: 10px;
 }
-.subs { display: flex; flex-wrap: wrap; gap: 4px; }
-.subs { flex: 1 0 100%; }
+/* One row, however many sizes there are: they share the width between
+   them rather than wrapping a lone number onto a line of its own. */
+.subs { display: flex; flex-wrap: nowrap; gap: 3px; margin-top: 6px; }
+/* The sizes belong to the switch above them; with it off there is no
+   grid for them to size, so they go quiet rather than disappearing. */
+.subs button:disabled { opacity: 0.3; cursor: default; }
+.subs button:disabled:hover { background: transparent; }
 .subs button {
-  min-width: 22px;
+  flex: 1 1 0;
+  min-width: 0;
   height: 24px;
-  padding: 0 4px;
+  padding: 0 2px;
   font-size: 10px;
   display: grid;
   place-items: center;
@@ -318,11 +296,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .toggle.muted { opacity: 0.42; }
 .toggle.on .tick { background: var(--ink); border-color: var(--ink); }
+/* A tick, drawn as two sides of a box turned on its corner. */
 .toggle.on .tick::after {
   content: "";
   position: absolute;
-  inset: 2px;
-  background: var(--accent);
+  left: 3px;
+  top: 0.5px;
+  width: 2.5px;
+  height: 6px;
+  border: solid var(--paper);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(42deg);
 }
 
 /* ---------------- palette ---------------- */
@@ -370,6 +354,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   place-items: center;
   flex: 0 0 auto;
 }
+/* The rename pencil, drawn in the same line as the tool icons. */
+.mini.pen { padding: 0 7px; }
+.mini.pen svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .mini:disabled { opacity: 0.32; cursor: default; }
 .mini:disabled:hover { background: transparent; }
 .armed {
@@ -395,6 +390,45 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pal-name input:focus { outline: none; border-color: var(--accent); }
 
 .swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+/* Somewhere to aim at while it is still empty — a new palette starts
+   that way, and dropping a colour in is how it stops being. */
+.swatches { min-height: 30px; }
+/* The strip a colour is being dragged into, and the place in it the
+   drop would land — a bar down the side of the swatch it would go in
+   front of, or behind the last one where it would go on the end. */
+.swatches.drop, .recent.drop {
+  outline: 1px dashed var(--accent);
+  outline-offset: 3px;
+}
+.swatch.ins-before::before,
+.swatch.ins-after::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.swatch.ins-before::before { left: -4px; }
+.swatch.ins-after::before { right: -4px; }
+/* Ink that was mixed rather than picked, kept to hand. Ten slots, small
+   enough that the palette above stays the thing that reads; the empty
+   ones are drawn so the strip does not change shape as it fills. */
+.recent { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; margin-top: 6px; }
+.recent .swatch { border-radius: 1px; }
+.recent .swatch .well { inset: 2px; }
+/* The cross, cut down for a slot half the size of a palette swatch. */
+.recent .swatch .kill {
+  width: 10px;
+  height: 10px;
+  font-size: 9px;
+}
+.recent .slot {
+  aspect-ratio: 1;
+  border: 1px dashed var(--ink-12);
+  border-radius: 1px;
+}
 .swatch {
   aspect-ratio: 1;
   border: 1px solid var(--ink-22);
@@ -420,11 +454,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .well i { position: absolute; inset: 0; }
 .swatch.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+/* The ring on the swatch in hand. It lies over the whole button, the
+   remove cross included, so it has to let the pointer through — with it
+   catching the click, the cross on the selected swatch did nothing but
+   pick the colour again. */
 .swatch.on::after {
   content: "";
   position: absolute;
   inset: -1px;
   border: 1px solid var(--paper-lift);
+  pointer-events: none;
 }
 .swatch .kill {
   position: absolute;
@@ -446,6 +485,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .swatch .kill:hover { opacity: 1; background: var(--accent); }
 
 .mixer { display: flex; align-items: center; gap: 5px; margin-top: 9px; }
+/* The gradient's own controls, shown only while the ink is one. */
+.grad-body { animation: unfold 0.16s ease both; }
+.grad-body .sub-row { margin-top: 8px; }
+.grad-body .modes { margin-left: auto; }
 .swatch-preview {
   width: 26px;
   height: 26px;
@@ -610,6 +653,7 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 16px; border: 0; bor
 
 .stage-wrap { position: relative; flex: 1; min-width: 0; height: 100%; }
 #stage { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#stage.gripping { cursor: pointer; }
 #stage.panning { cursor: grabbing; }
 #stage.outside { cursor: grab; }
 #stage.selecting { cursor: default; }
