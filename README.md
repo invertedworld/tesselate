@@ -188,11 +188,15 @@ has.
 
 ### With something in hand
 
-What is in hand is haloed in vermilion, and the halo goes down **before** the
-marks so they paint over it: it reads as a glow around them rather than a line
-through them, and nothing has to be put back afterwards. Drawing it on top and
-repainting the held marks over it covered whatever else stood above them — a
-fill eating the border of the mark beside it.
+What is in hand is haloed: **one ring round the lot**, the same colour and the
+same reach all the way round, lying on the paper just outside the ink. It is
+the ink in hand grown a few pixels and cut out again by that same ink, so it
+never covers the marks it belongs to, and it goes over the rest of the drawing,
+so nothing hides it either. It is vermilion — or dark where any of the ink in
+hand is vermilion itself, decided for the whole of what is held rather than
+mark by mark. Laid down under the marks with a glow to each, a figure came out
+glowing two colours at once, further out from its border than from its fill,
+and dimmed wherever other ink crossed it.
 
 The palette recolours it, arrow keys nudge it (`Alt` for a bigger step,
 one lattice cell at a time when snapping is on), `Delete` removes it and

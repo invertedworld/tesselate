@@ -815,19 +815,12 @@
        whole of it. */
     const bucket = Math.round(Math.log2(scale) * 2);
     paintWarp = { tol: WARP_PX / Math.pow(2, (bucket + 1) / 2), bucket, ink: state.warp.ink };
-    haloWarp = { ...paintWarp, ink: 'bend' };
     draftWarps = new Map();
     junctions = findJunctions(list);
     findCrossJunctions();
 
     applyView();
 
-    /* The glow behind what is in hand goes down before the marks, so
-       they paint over it and nothing has to be put back afterwards.
-       Drawing it on top and then repainting the held marks over it
-       covered whatever else stood above them — a fill eating the border
-       of the mark beside it, ragged edge and all. */
-    if (!cleanFrame) drawHaloes();
 
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -863,6 +856,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (cleanFrame) return;
 
+    drawHaloRing();
     if (state.grid) drawRules(R);
     if (state.sub > 1) drawSubGrid(R);
     if (state.arrows) drawOrientation(R);
@@ -952,7 +946,6 @@
   const warpCache = new WeakMap();
   let draftWarps = new Map();
   let paintWarp = { tol: 1, bucket: 0, ink: 'swell' };
-  let haloWarp = paintWarp;
 
   // The box one copy of a mark covers on the plane, ink and all.
   function copyBox(s, i, j) {
@@ -1099,11 +1092,117 @@
     return (moving ? moving.previews : heldMarks()).filter(Boolean);
   }
 
-  function drawHaloes() {
-    for (const shape of heldNow()) {
-      const at = unitFrame(shape);
-      inTileFrame(() => drawHalo(shape, at), at);
+  /* The glow round what is in hand: one ring round the lot, the same colour
+     and the same reach all the way round, lying on the paper just outside
+     the ink.
+
+     Each mark used to lay a glow of its own under the marks, and they did
+     not agree. A border in the accent's own vermilion glowed dark while the
+     fill it held glowed vermilion; a stroke's glow reached out from its
+     outer edge while a fill's reached out from under that stroke; and
+     whatever was painted over a glow — a neighbour, a translucent ink — hid
+     it or stained it. So the ink in hand is laid down once, grown by the
+     reach, cut out again by itself, and what is left goes on top of the
+     drawing: nothing of the marks in hand lies under it to be covered, and
+     nothing else is painted over it. */
+  const HALO_PX = 4;
+  const haloCanvas = document.createElement('canvas');
+  const hctx = haloCanvas.getContext('2d');
+
+  function drawHaloRing() {
+    const shapes = heldNow();
+    if (!shapes.length) return;
+    if (haloCanvas.width !== canvas.width || haloCanvas.height !== canvas.height) {
+      haloCanvas.width = canvas.width;
+      haloCanvas.height = canvas.height;
     }
+    hctx.setTransform(1, 0, 0, 1, 0, 0);
+    hctx.globalCompositeOperation = 'source-over';
+    hctx.clearRect(0, 0, haloCanvas.width, haloCanvas.height);
+    const reach = (2 * HALO_PX) / state.view.scale;   // across a line, so HALO_PX either side
+    const hair = 0.9 / state.view.scale;
+    const inks = shapes.map((sh) => {
+      const at = unitFrame(sh);
+      return { at, ops: inkOf(sh, at, hair) };
+    });
+    hctx.fillStyle = '#000';
+    hctx.strokeStyle = '#000';
+    for (const cut of [false, true]) {
+      hctx.globalCompositeOperation = cut ? 'destination-out' : 'source-over';
+      for (const { at, ops } of inks) {
+        inTileFrame(() => {
+          for (const op of ops) {
+            if (op.fill) {
+              hctx.fill(op.fill, op.rule);
+              if (cut) continue;
+              hctx.lineWidth = reach;
+              hctx.lineJoin = 'round';
+              hctx.stroke(op.fill);
+            } else if (cut) {
+              hctx.lineWidth = op.width;
+              hctx.lineCap = op.cap;
+              hctx.lineJoin = op.join;
+              hctx.stroke(op.line);
+            } else {
+              hctx.lineWidth = op.width + reach;
+              hctx.lineCap = 'round';
+              hctx.lineJoin = 'round';
+              hctx.stroke(op.line);
+            }
+          }
+        }, at, hctx);
+      }
+    }
+    /* One colour for the whole of what is held: vermilion, or dark where
+       any of it is in the vermilion itself, which a vermilion ring would
+       only seem to thicken. */
+    const vermilion = shapes.some((sh) => rgbOf(sh.color) === ACCENT
+      || (!!sh.fillColor && rgbOf(sh.fillColor) === ACCENT));
+    hctx.setTransform(1, 0, 0, 1, 0, 0);
+    hctx.globalCompositeOperation = 'source-in';
+    hctx.fillStyle = vermilion ? '#17160f' : ACCENT;
+    hctx.fillRect(0, 0, haloCanvas.width, haloCanvas.height);
+    hctx.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 0.4;
+    ctx.drawImage(haloCanvas, 0, 0);
+    ctx.restore();
+  }
+
+  /* The ink one mark lays down in square `at`, as the plane paints it —
+     warped or not — as areas to fill and lines to stroke. */
+  function inkOf(s, at, hair) {
+    const n = state.pattern.n;
+    tileKey = `${mod(at.i, n)},${mod(at.j, n)}`;
+    if (s.layer === 'fill' || s.filled) {
+      const bent = warpedCopy(s, undefined, at.i, at.j, paintWarp);
+      return [{ fill: bent ? bentPath(bent) : pathOf(s), rule: s.layer === 'fill' ? 'evenodd' : 'nonzero' }];
+    }
+    const ops = [];
+    if (s.fillColor) {
+      const inside = warpedCopy(s, 'inside', at.i, at.j, paintWarp);
+      ops.push({ fill: inside ? bentPath(inside) : pathOf(s), rule: 'nonzero' });
+    }
+    const bent = warpedCopy(s, s.fillColor ? 'outline' : undefined, at.i, at.j, paintWarp);
+    if (bent && bent.how === 'nonzero') {
+      ops.push({ fill: bentPath(bent), rule: 'nonzero' });
+      return ops;
+    }
+    const [cap, join] = capsOf(s.kind);
+    const width = Math.max(s.width, hair);
+    ops.push({ line: bent ? bentPath(bent) : pathOf(s), width, cap, join });
+    if (bent) {
+      if (bent.discs.length) ops.push({ fill: bentPath(bent, 'discs'), rule: 'nonzero' });
+    } else if (ROUNDABLE[s.kind]) {
+      for (const p of endpointsOf(s)) {
+        if (!joined(p)) continue;
+        const disc = new Path2D();
+        disc.arc(p.x, p.y, width / 2, 0, Math.PI * 2);
+        ops.push({ fill: disc, rule: 'nonzero' });
+      }
+    }
+    return ops;
   }
 
   /* The box round what is held, and the grips on it.
@@ -1462,34 +1561,24 @@
 
   // The home square's own frame, where a mark's coordinates mean what
   // they say.
-  function inTileFrame(draw, tile) {
-    ctx.save();
-    applyView();
+  function inTileFrame(draw, tile, into) {
+    const g = into || ctx;
+    const v = state.view;
+    g.save();
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.translate(v.x, v.y);
+    g.rotate(v.rot);
+    g.scale(v.scale, v.scale);
     const f = tile || frameTile();
-    ctx.translate(f.i * T, f.j * T);
+    g.translate(f.i * T, f.j * T);
     const tr = rotAt(state.pattern, f.i, f.j);
     if (tr) {
-      ctx.translate(T / 2, T / 2);
-      ctx.rotate((tr * Math.PI) / 2);
-      ctx.translate(-T / 2, -T / 2);
+      g.translate(T / 2, T / 2);
+      g.rotate((tr * Math.PI) / 2);
+      g.translate(-T / 2, -T / 2);
     }
     draw();
-    ctx.restore();
-  }
-
-  function drawHalo(shape, at) {
-    const solid = shape.layer === 'fill' || shape.filled;
-    const pen = solid ? 0 : shape.width;
-    const [cap, join] = capsOf(shape.kind);
-    ctx.lineCap = cap;
-    ctx.lineJoin = join;
-    ctx.globalAlpha = 0.4;
-    ctx.strokeStyle = rgbOf(shape.color) === ACCENT ? '#17160f' : ACCENT;
-    ctx.lineWidth = pen + 8 / state.view.scale;
-    // Round the line the mark follows, however the ink is warped.
-    const bent = warpedCopy(shape, undefined, at.i, at.j, haloWarp);
-    ctx.stroke(bent ? bentPath(bent) : pathOf(shape));
-    ctx.globalAlpha = 1;
+    g.restore();
   }
 
   const drawSelectionBox = (b, at) => drawSelectionQuad(boxCorners(b), at);
