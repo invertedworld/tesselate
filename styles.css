@@ -128,7 +128,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   color: var(--ink-60);
 }
 .tool.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.tool.on em { color: rgba(244, 240, 230, 0.72); }
+/* The lit tool is light, so its caption is the dark of the rail — the
+   light one it had was left over from when the rail was light, and wrote
+   the caption out of sight on its own button. */
+.tool.on em { color: rgba(33, 33, 32, 0.72); }
 .tool.on::before {
   content: "";
   position: absolute;
