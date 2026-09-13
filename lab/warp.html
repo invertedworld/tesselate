@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Tesselate — warp lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  .lab .note { margin: 6px 0 0; line-height: 1.45; }
+  .lab .chips { margin-top: 8px; }
+  .lab .stats { opacity: 0.7; font-size: 10px; }
+  #stage { cursor: crosshair; }
+  #stage.on-handle { cursor: grab; }
+  .svg-view { position: fixed; inset: 0; background: #fff; display: flex; }
+  .svg-view img { width: 100%; height: 100%; object-fit: contain; }
+</style>
+</head>
+<body>
+
+<aside class="rail lab">
+
+  <section class="panel">
+    <div class="label"><span>Warp lab</span><i></i></div>
+    <div class="chips" id="presets"></div>
+    <p class="note" id="presetNote"></p>
+  </section>
+
+  <section class="panel">
+    <div class="label"><span>Warp</span><i></i></div>
+    <div class="row slide">
+      <span class="mono tiny">Amount</span>
+      <input type="range" id="amount" min="0" max="100" step="1" value="100" aria-label="Amount">
+      <span class="mono num" id="amountVal">100</span>
+    </div>
+    <div class="sub-row">
+      <span class="mono tiny">Anchors</span>
+      <div class="modes" id="repeat">
+        <button data-repeat="plane" title="Each anchor sits once, on the plane — a lens">Plane</button>
+        <button data-repeat="tile" title="Each anchor sits in every square, turned with it — still a tiling">Tile</button>
+      </div>
+    </div>
+    <div class="sub-row">
+      <span class="mono tiny">Ink</span>
+      <div class="modes" id="ink">
+        <button data-ink="bend" title="Strokes follow the warp but keep their width">Bends</button>
+        <button data-ink="swell" title="Strokes are warped as areas, so a bulge thickens them too">Swells</button>
+      </div>
+    </div>
+    <button class="wide toggle" id="bendRules" title="Warp the tile rules and the grid with the marks"><span class="tick"></span><span>Bend the rules</span></button>
+    <button class="wide toggle" id="tilesOn"><span class="tick"></span><span>Show tiles</span></button>
+    <div class="sub-row">
+      <span class="mono tiny">Grid</span>
+      <div class="modes" id="lattice">
+        <button data-lattice="0">Off</button>
+        <button data-lattice="4">4</button>
+        <button data-lattice="8">8</button>
+        <button data-lattice="16">16</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="label"><span>Anchor</span><i></i></div>
+    <p class="note" id="anchorNone">None in hand. Click the paper to drop one.</p>
+    <div id="anchorBody" hidden>
+      <div class="row slide">
+        <span class="mono tiny">Bulge</span>
+        <input type="range" id="bulge" min="-100" max="100" step="1" value="0" aria-label="Bulge">
+        <span class="mono num" id="bulgeVal">0</span>
+      </div>
+      <div class="row slide">
+        <span class="mono tiny">Twirl</span>
+        <input type="range" id="twirl" min="-100" max="100" step="1" value="0" aria-label="Twirl">
+        <span class="mono num" id="twirlVal">0</span>
+      </div>
+      <div class="row slide">
+        <span class="mono tiny">Radius</span>
+        <input type="range" id="radius" min="30" max="2000" step="5" value="400" aria-label="Radius">
+        <span class="mono num" id="radiusVal">400</span>
+      </div>
+      <button class="wide" id="removeAnchor" title="Delete">Remove anchor</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="label"><span>Out</span><i></i></div>
+    <div class="grid2">
+      <button class="wide" id="svgBtn" title="Warped geometry, per block square where the warp repeats">Save SVG</button>
+      <button class="wide" id="pngBtn">Save PNG</button>
+    </div>
+    <button class="wide toggle" id="demoOn" title="The lab's own drawing, or the one on the table in this browser"><span class="tick"></span><span>Demo drawing</span></button>
+    <p class="note mono stats" id="stats"></p>
+    <p class="note mono stats" id="readout"></p>
+    <p class="note">Click the paper to drop an anchor · drag its dot to move it, the square on its rim to size it · Delete removes it · drag to pan · pinch or ⌘-scroll to zoom</p>
+  </section>
+
+</aside>
+
+<main class="stage-wrap">
+  <canvas id="stage"></canvas>
+</main>
+
+<script src="../src/geometry.js"></script>
+<script src="../src/patterns.js"></script>
+<script src="../src/warp.js"></script>
+<script src="lab.js"></script>
+<script>if (/[?&]selftest=1/.test(location.search)) document.write('<script src="selftest.js"><\/script>');</script>
+</body>
+</html>

@@ -52,6 +52,7 @@ right out before letting go counts as finishing it.
 | **Rect** `R` | Click a corner, then the opposite one; `Alt` for a square. On the **Iso** frame it draws a rhombus instead — a face of a cube |
 | **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. On an empty tile there is nothing holding an area in, so the whole square fills, and it comes out as the ground. Click a border and that border takes the current ink. Click inside a figure that is filled already and the whole figure takes it — every fill in it and every border grouped with it — even where its border has since been moved or sized away from it. The first fill of an outlined area leaves the outline its own colour, and an already-filled area can still be cut up by new lines and its parts filled separately |
 | **Erase** `E` | Click or drag across a mark to remove it. A border answers before the interior of the mark holding it, and before a fill, so a line drawn across a filled shape can still be got at — and a mark can be rubbed out by any of its ink, including the part that has run over a neighbouring square |
+| **Warp** `W` | Click the paper to drop an anchor, and the plane bends round it — see [Warp](#warp). Drag an anchor's dot to move it and the square on its rim to size it; `Delete` removes the anchor in hand. Dragging bare paper pans |
 
 Straight geometry is stroked with **flat ends**, so a line stops exactly on
 the point it was placed on and runs flush to the tile edge to meet its own
@@ -311,7 +312,8 @@ It is meant to be read. One mark per line, so a drawing diffs like source:
      "saved": "2026-09-11T07:01:13.385Z",
      "tile": 1000,
      "pattern": {"n":2,"cells":[0,1,3,2]},
-     "plane": {"grid":true,"snap":false,"sub":8,"subLast":8,"diag":"off"},
+     "plane": {"grid":true,"snap":false,"sub":8,"subLast":8,"diag":"off",
+               "warp":{"amount":1,"repeat":"plane","ink":"swell","anchors":[{"x":500,"y":500,"r":400,"bulge":0.5,"twirl":0}]}},
      "ink": {"color":"#cf4326","width":9,"filled":false},
      "palette": {"name":"Riso · 15","palettes":[…],"recent":[…]},
      "shapes": [
@@ -574,6 +576,68 @@ marks, no paper — on a clear ground. The SVG is a single `<g>` of vector paths
 instanced once per tile with a rotation, over a block-aligned sheet of at least
 4×4 tiles.
 
+## Warp
+
+The **Warp** tool `W` bends the plane. Click the paper to drop an anchor: the
+paper round it swells, and every straight line near it — the marks, the tile
+rules, the lattice — comes out as a curve. Drag an anchor's dot to move it and
+the square on its rim to size it; `Delete` removes the anchor in hand and `Esc`
+lets it go. The anchors only show while the tool is up.
+
+It is a way of looking at the drawing, not a change to it. The marks stay
+exactly as they were drawn, and the pointer is taken back through the warp on
+its way in — the way the 45° frame takes it back through the angle — so
+everything else works through it unchanged. A line drawn in a bulge lands where
+the pointer put it, snapping catches the bent lattice, a click picks up the
+mark it lands on, and the fill tool floods the area under the pointer.
+
+| | |
+|---|---|
+| **Amount** | The whole warp, faded in and out. At 0 the plane is flat, and the anchors are kept for when it comes back up |
+| **Anchors: Plane** | Each anchor sits once, where it was put — a lens laid over the pattern. Inside it the pattern stops repeating exactly |
+| **Anchors: Tile** | Each anchor sits in every square, carried round by that square's quarter-turn, so the warp repeats exactly as the drawing does and it is still a tiling. An anchor whose disc stays inside its square leaves the seams straight; one sitting on a seam bends the tile edges themselves, and the bent tiles still fit each other |
+| **Ink: Bends** | A stroke follows the warp at the width it was given |
+| **Ink: Swells** | A stroke is warped as the area it covers, so a bulge thickens the ink along with the paper under it |
+| **Bulge** | For the anchor in hand: how far it swells the middle of its disc, up to about four and a half times. Below 0 it pinches instead |
+| **Twirl** | How far it turns the middle of its disc, up to a full turn either way |
+| **Radius** | How big its disc is. Nothing outside the disc moves |
+
+Swells is what keeps a fill against its border. A fill is tucked just under
+the edge of the stroke around it; under Bends, where a bulge magnifies the paper
+the fill's edge moves out and the stroke does not, and a hairline of bare paper
+opens between them. Bends is the lighter of the two to draw.
+
+The rules and the lattice bend with the marks. They are lines on the same
+paper, and ruled straight over bent marks they would stop saying where a seam
+is.
+
+**Anchors can overlap.** The warp is a flow: each anchor pushes the paper out
+from its middle and round it, fading to nothing at its rim, and every point is
+carried along all of them at once. A flow cannot fold, however strong or
+crowded the anchors, so two points of the drawing never land on one and the
+pointer always has exactly one place to go back to. Dropped or dragged inside
+another anchor's disc, a dot is aimed so it still lands under the pointer —
+taken straight back, the other anchor would carry it off.
+
+**Undo** takes anchors back as it takes back marks. Dropping, moving, sizing and
+removing one are each a step; a run of a slider is a single step, and so is a
+switch of Plane, Tile or ink.
+
+The warp is **part of the drawing**. It is saved with it under `plane.warp`, a
+drawing saved before there was a warp opens flat, and *New* clears it.
+
+So it goes out with the drawing. *Save PNG* and *Copy PNG* are the frame as it
+stands. *Save SVG* writes the warped geometry: with Tile anchors, one warped
+definition for each square of the block, and every square on the sheet pointing
+at its own; with Plane anchors, the squares the lens reaches written out in full
+and every other square the plain tile, as before. Swelled strokes are written as
+filled paths. A gradient keeps its sweep straight across a warped mark.
+
+A warped copy of a mark is built once and kept — per square, or per square of
+the block where anchors repeat, and per step of zoom — so panning costs nothing
+extra; moving an anchor rebuilds what it reaches. `lab/warp.html` is the bench
+the warp was worked out on, with the ideas tried along the way.
+
 ## The room
 
 Dark grey bench, white paper, one vermilion accent. The rail is meant to
@@ -588,6 +652,7 @@ rather than tinted, so a colour on screen is the colour it is.
     src/geometry.js   path building, SVG path data, simplification,
                       flood fill to vector contour tracing
     src/patterns.js   symmetry presets and the rotation lookup
+    src/warp.js       the warp: anchors as a flow, and marks laid through it
     src/app.js        state, renderer, input, UI, export
 
 ### How fill stays vector

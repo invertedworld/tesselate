@@ -270,6 +270,7 @@
     rect: 'Rectangle — click a corner, then the opposite one · Shift squares it',
     fill: 'Fill — click an enclosed area, or a mark to recolour it',
     erase: 'Erase — click or drag across a mark',
+    warp: 'Warp — click the paper to drop an anchor · drag its dot to move it, the square on its rim to size it',
   };
 
   const canvas = document.getElementById('stage');
@@ -291,6 +292,10 @@
     sub: 0,             // 0 while the grid is off
     subLast: 8,         // the size it comes back to when switched on
     diag: 'off',        // 'off' | 'grid' | 'plane'
+    /* How the plane is bent on its way to the screen — see warp.js. It
+       is replaced whole on every change and never edited in place, so an
+       undo step can simply keep the one it had. */
+    warp: { amount: 1, repeat: 'plane', ink: 'swell', anchors: [] },
     pattern: { n: 2, cells: cellsFromPreset(PRESETS[1]) },
     view: { scale: 0.5, x: 0, y: 0, rot: 0 },
   };
@@ -308,6 +313,7 @@
     sub: state.sub,
     subLast: state.subLast,
     diag: state.diag,
+    warp: state.warp,
     pattern: { n: state.pattern.n, cells: state.pattern.cells.slice() },
     view: { ...state.view },
   };
@@ -365,20 +371,52 @@
      lattice and every mark all turn together. Everything the renderer
      draws goes through one of these three. */
 
-  function toWorld(sx, sy) {
+  /* The warp sits between the plane and the view. `toPlane` and
+     `planeToScreen` are the view alone; `toWorld` and `w2s` go through
+     the warp as well — back through it on the way in, so that whatever is
+     handed a point from the pointer is handed a point of the drawing, and
+     out through it on the way to the screen. */
+  function toPlane(sx, sy) {
     const v = state.view;
     const c = Math.cos(v.rot), n = Math.sin(v.rot);
     const dx = (sx - v.x) / v.scale, dy = (sy - v.y) / v.scale;
     return { x: dx * c + dy * n, y: dy * c - dx * n };
   }
 
-  function w2s(x, y) {
+  function planeToScreen(x, y) {
     const v = state.view;
     const c = Math.cos(v.rot), n = Math.sin(v.rot);
     return {
       x: v.x + (x * c - y * n) * v.scale,
       y: v.y + (x * n + y * c) * v.scale,
     };
+  }
+
+  function toWorld(sx, sy) {
+    const p = toPlane(sx, sy);
+    const f = warpField();
+    return f.active ? f.unwarp(p) : p;
+  }
+
+  function w2s(x, y) {
+    const f = warpField();
+    if (!f.active) return planeToScreen(x, y);
+    const q = f.warp({ x, y });
+    return planeToScreen(q.x, q.y);
+  }
+
+  /* The warp in force. Rebuilt when the warp is replaced or a square of
+     the block is turned, since a warp that repeats is laid square by
+     square. */
+  let liveWarp = NO_WARP;
+  let liveWarpFor = { warp: null, cells: '' };
+  function warpField() {
+    const cells = `${state.pattern.n}:${state.pattern.cells.join('')}`;
+    if (liveWarpFor.warp !== state.warp || liveWarpFor.cells !== cells) {
+      liveWarp = makeWarp(state.warp, state.pattern);
+      liveWarpFor = { warp: state.warp, cells };
+    }
+    return liveWarp;
   }
 
   function applyView() {
@@ -655,12 +693,16 @@
   function tileRange() {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [sx, sy] of [[0, 0], [cw, 0], [0, ch], [cw, ch]]) {
-      const p = toWorld(sx, sy);
+      const p = toPlane(sx, sy);
       if (p.x < x0) x0 = p.x;
       if (p.y < y0) y0 = p.y;
       if (p.x > x1) x1 = p.x;
       if (p.y > y1) y1 = p.y;
     }
+    /* A warp keeps each disc to itself, so paper showing inside one came
+       from inside it: the range need only reach as far out as the discs. */
+    const g = warpField().reach;
+    x0 -= g; y0 -= g; x1 += g; y1 += g;
     return {
       i0: Math.floor(x0 / T), i1: Math.floor(x1 / T),
       j0: Math.floor(y0 / T), j1: Math.floor(y1 / T),
@@ -678,7 +720,14 @@
      sitting on a whole one. */
   let hairSnap = 0.5;
   function hairLine(ax, ay, bx, by) {
-    const p = w2s(ax, ay), q = w2s(bx, by);
+    const f = warpField();
+    if (f.active && f.touches({
+      x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by),
+    })) {
+      tracePlane([{ x: ax, y: ay }, { x: bx, y: by }], false);
+      return;
+    }
+    const p = planeToScreen(ax, ay), q = planeToScreen(bx, by);
     if (crispRot) {
       if (Math.abs(p.x - q.x) < 0.01) { const x = Math.round(p.x) + hairSnap; p.x = x; q.x = x; }
       if (Math.abs(p.y - q.y) < 0.01) { const y = Math.round(p.y) + hairSnap; p.y = y; q.y = y; }
@@ -686,6 +735,27 @@
     ctx.moveTo(p.x, p.y);
     ctx.lineTo(q.x, q.y);
   }
+
+  /* A run on the plane, drawn onto the screen through the warp: split
+     wherever the warp bends it, so a rule or the edge of a box crossing a
+     disc comes out as the curve it has become. Adds to the path in hand,
+     the way hairLine does. */
+  const TRACE_PX = 0.35;
+
+  function traceRun(run) {
+    const f = warpField();
+    const [line] = layRuns([run], f.active ? f.warp : (p) => p,
+      TRACE_PX / state.view.scale, f.active ? f.seg : Infinity);
+    if (!line || !line.pts.length) return;
+    line.pts.forEach((p, k) => {
+      const s = planeToScreen(p.x, p.y);
+      if (k) ctx.lineTo(s.x, s.y);
+      else ctx.moveTo(s.x, s.y);
+    });
+    if (line.closed) ctx.closePath();
+  }
+
+  const tracePlane = (pts, closed) => traceRun(polyRun(pts, closed));
 
   // What the plane should show: the committed shapes, with a shape
   // being dragged swapped for its moved copy, plus any live draft.
@@ -740,6 +810,13 @@
     draftPath = draft ? buildPath(draft) : null;
     const hair = 0.9 / scale;
     const list = paintOrder(drawList());
+    /* Warped copies are kept per zoom step, a step being half an octave,
+       and built to that step's tolerance so they stay true across the
+       whole of it. */
+    const bucket = Math.round(Math.log2(scale) * 2);
+    paintWarp = { tol: WARP_PX / Math.pow(2, (bucket + 1) / 2), bucket, ink: state.warp.ink };
+    haloWarp = { ...paintWarp, ink: 'bend' };
+    draftWarps = new Map();
     junctions = findJunctions(list);
     findCrossJunctions();
 
@@ -769,8 +846,8 @@
             ctx.rotate((r * Math.PI) / 2);
             ctx.translate(-T / 2, -T / 2);
           }
-          if (sh.inside) paintShape(sh.inside, hair, 'inside');
-          else paintShape(sh, hair, sh.fillColor ? 'outline' : undefined);
+          if (sh.inside) paintShape(sh.inside, hair, 'inside', i, j);
+          else paintShape(sh, hair, sh.fillColor ? 'outline' : undefined, i, j);
           ctx.restore();
         }
       }
@@ -791,6 +868,7 @@
     if (state.arrows) drawOrientation(R);
     if (picked.length) drawSelection();
     if (lasso) drawLasso();
+    if (state.tool === 'warp') drawAnchors(R);
     if (hoverSnap) drawSnapMark();
   }
 
@@ -825,8 +903,12 @@
     return grad;
   }
 
-  function paintShape(s, hair, part) {
-    const p = s === draft ? draftPath : pathOf(s);
+  /* `i`, `j` say which square's copy is being painted, so that a copy
+     the warp bends can be found; without them the mark goes down as it
+     lies. */
+  function paintShape(s, hair, part, i, j) {
+    const bent = i == null ? null : warpedCopy(s, part, i, j, paintWarp);
+    const p = bent ? bentPath(bent) : s === draft ? draftPath : pathOf(s);
     if (s.layer === 'fill') {
       ctx.fillStyle = inkStyle(s.color, s);
       ctx.fill(p, 'evenodd');
@@ -845,12 +927,94 @@
       const style = inkStyle(s.color, s);
       ctx.strokeStyle = style;
       ctx.fillStyle = style;
+      // Swelled, a stroke is the area it covers, rounded joins and all.
+      if (bent && bent.how === 'nonzero') { ctx.fill(p); return; }
       const w = Math.max(s.width, hair);
       ctx.lineWidth = w;
       ctx.stroke(p);
-      paintJunctions(ctx, s, w);
+      if (!bent) paintJunctions(ctx, s, w);
+      else if (bent.discs.length) ctx.fill(bentPath(bent, 'discs'));
     }
   }
+
+  /* ---- warped copies ----
+     One copy of a mark as a square shows it through the warp (warp.js).
+     They are kept against the mark: marks are never changed in place, so
+     one can hold its copies by identity the way pathOf holds its path.
+     Keyed by the square — by its place in the block when anchors repeat,
+     since a square a block along shows the very same copy — by which of
+     its ends are rounded off there, and by the warp, zoom step and ink
+     they were built for. Null says the warp does not reach that copy,
+     which is then painted exactly as it always was. The mark being drawn
+     is the exception: it changes under the same object as the pointer
+     moves, so its copies last a frame. */
+  const WARP_PX = 0.3;       // how far a warped chord may stray from the curve, on screen
+  const warpCache = new WeakMap();
+  let draftWarps = new Map();
+  let paintWarp = { tol: 1, bucket: 0, ink: 'swell' };
+  let haloWarp = paintWarp;
+
+  // The box one copy of a mark covers on the plane, ink and all.
+  function copyBox(s, i, j) {
+    const b = shapeBBox(s);
+    if (!b) return null;
+    const pen = (s.layer === 'stroke' && !s.filled ? s.width || 0 : 0) / 2;
+    const p = placeIn({ x: b.x0 - pen, y: b.y0 - pen }, i, j);
+    const q = placeIn({ x: b.x1 + pen, y: b.y1 + pen }, i, j);
+    return { x0: Math.min(p.x, q.x), y0: Math.min(p.y, q.y), x1: Math.max(p.x, q.x), y1: Math.max(p.y, q.y) };
+  }
+
+  function warpedCopy(s, part, i, j, how) {
+    const f = warpField();
+    if (!f.active) return null;
+    const n = state.pattern.n;
+    tileKey = `${mod(i, n)},${mod(j, n)}`;
+    const ends = s.layer === 'stroke' && !s.filled && part !== 'inside' && ROUNDABLE[s.kind]
+      ? endpointsOf(s).filter(joined)
+      : [];
+    const sig = `${f.sig}|${how.bucket}|${how.ink}`;
+    let key = `${part || ''}|${f.tiled ? tileKey : `${i},${j}`}|${ends.map(jkey).join(' ')}`;
+    let copies;
+    if (s === draft) {
+      copies = draftWarps;
+      key = `${sig}|${key}`;
+    } else {
+      let bySig = warpCache.get(s);
+      if (!bySig) warpCache.set(s, (bySig = new Map()));
+      copies = bySig.get(sig);
+      if (!copies) {
+        // A handful of warps to a mark: the one on screen, its halo, and
+        // the few a drag or a zoom has just gone through.
+        if (bySig.size >= 6) bySig.delete(bySig.keys().next().value);
+        bySig.set(sig, (copies = new Map()));
+      }
+    }
+    let got = copies.get(key);
+    if (got === undefined) {
+      const box = copyBox(s, i, j);
+      got = box && f.touches(box)
+        ? warpMark(s, part, i, j, state.pattern, f, how.tol, how.ink, ends)
+        : null;
+      copies.set(key, got);
+    }
+    return got;
+  }
+
+  function linesPath(lines) {
+    const p = new Path2D();
+    for (const l of lines) {
+      if (!l.pts.length) continue;
+      p.moveTo(l.pts[0].x, l.pts[0].y);
+      for (let k = 1; k < l.pts.length; k++) p.lineTo(l.pts[k].x, l.pts[k].y);
+      if (l.closed) p.closePath();
+    }
+    return p;
+  }
+
+  const bentPath = (got, which) => {
+    const k = `${which || 'lines'}Path`;
+    return got[k] || (got[k] = linesPath(got[which || 'lines']));
+  };
 
   /* Painting order. A group is one unit and sits at a single depth, so
      moving it carries its fill and its border together; inside a unit
@@ -937,7 +1101,8 @@
 
   function drawHaloes() {
     for (const shape of heldNow()) {
-      inTileFrame(() => drawHalo(shape), unitFrame(shape));
+      const at = unitFrame(shape);
+      inTileFrame(() => drawHalo(shape, at), at);
     }
   }
 
@@ -1138,12 +1303,15 @@
   function gripAt(w) {
     const held = heldMarks();
     if (!held.length) return null;
-    const k = state.view.scale;
+    /* Measured on the screen, where the grips are drawn: through a warp,
+       the plane can put a grip nearer or further than it shows. */
     const f = frameTile(), h = heldFrame();
     const pw = placeIn(w, f.i, f.j);
+    const ps = w2s(pw.x, pw.y);
     const near = (p) => {
       const q = placeIn(p, h.i, h.j);
-      return Math.hypot(q.x - pw.x, q.y - pw.y) * k;
+      const t = w2s(q.x, q.y);
+      return Math.hypot(t.x - ps.x, t.y - ps.y);
     };
 
     if (held.length === 1) {
@@ -1309,7 +1477,7 @@
     ctx.restore();
   }
 
-  function drawHalo(shape) {
+  function drawHalo(shape, at) {
     const solid = shape.layer === 'fill' || shape.filled;
     const pen = solid ? 0 : shape.width;
     const [cap, join] = capsOf(shape.kind);
@@ -1318,7 +1486,9 @@
     ctx.globalAlpha = 0.4;
     ctx.strokeStyle = rgbOf(shape.color) === ACCENT ? '#17160f' : ACCENT;
     ctx.lineWidth = pen + 8 / state.view.scale;
-    ctx.stroke(pathOf(shape));
+    // Round the line the mark follows, however the ink is warped.
+    const bent = warpedCopy(shape, undefined, at.i, at.j, haloWarp);
+    ctx.stroke(bent ? bentPath(bent) : pathOf(shape));
     ctx.globalAlpha = 1;
   }
 
@@ -1331,10 +1501,7 @@
     // when the plane is turned, and in the square that mark was picked up
     // in rather than whichever one the pointer is over.
     const f = at || heldFrame();
-    const corners = pts.map((p) => {
-      const q = placeIn(p, f.i, f.j);
-      return w2s(q.x, q.y);
-    });
+    const corners = pts.map((p) => placeIn(p, f.i, f.j));
     ctx.save();
     // Ink black, not the accent: the box says where a thing is, which is
     // not something that needs to shout.
@@ -1343,9 +1510,7 @@
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
-    ctx.moveTo(corners[0].x, corners[0].y);
-    for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
-    ctx.closePath();
+    tracePlane(corners, true);
     ctx.stroke();
     ctx.restore();
   }
@@ -1565,10 +1730,26 @@
   // Printer's crop marks around the drawing surface.
   /* ---------------- history ---------------- */
 
-  function commit(shape) {
-    undoStack.push(state.shapes.slice());
+  /* A step holds the marks and the warp together, so undo takes an
+     anchor back as readily as a line. Both are replaced rather than
+     changed in place, so a step is a copy of a list and a reference. */
+  const snapshot = () => ({ shapes: state.shapes.slice(), warp: state.warp });
+
+  function pushStep() {
+    undoStack.push(snapshot());
     if (undoStack.length > 200) undoStack.shift();
     redoStack.length = 0;
+  }
+
+  function takeBack(step) {
+    state.shapes = step.shapes;
+    state.warp = step.warp;
+    if (!state.warp.anchors[warpSel]) warpSel = -1;
+    syncWarpPanel();
+  }
+
+  function commit(shape) {
+    pushStep();
     state.shapes = state.shapes.concat([shape]);
     afterChange();
   }
@@ -1577,10 +1758,7 @@
      one. A slider drag fires an event a pixel; without it a single sweep
      of the alpha would need forty presses of undo to take back. */
   function replaceShapes(next, merge) {
-    if (!merge) {
-      undoStack.push(state.shapes.slice());
-      redoStack.length = 0;
-    }
+    if (!merge) pushStep();
     state.shapes = next;
     afterChange();
   }
@@ -1604,8 +1782,8 @@
     cancelDraft();
     select([]);
     if (!undoStack.length) return flash('Nothing to undo');
-    redoStack.push(state.shapes.slice());
-    state.shapes = undoStack.pop();
+    redoStack.push(snapshot());
+    takeBack(undoStack.pop());
     afterChange();
   }
 
@@ -1613,8 +1791,8 @@
     cancelDraft();
     select([]);
     if (!redoStack.length) return flash('Nothing to redo');
-    undoStack.push(state.shapes.slice());
-    state.shapes = redoStack.pop();
+    undoStack.push(snapshot());
+    takeBack(redoStack.pop());
     afterChange();
   }
 
@@ -2115,7 +2293,9 @@
   }
 
   function cancelDraft() {
-    if (!draft && !pending && !moving && !grip) return false;
+    if (!draft && !pending && !moving && !grip && !warpDrag) return false;
+    warpDrag = null;
+    canvas.classList.remove('panning');
     draft = null;
     pending = null;
     moving = null;
@@ -3009,8 +3189,7 @@
           (state.shapes.indexOf(b) > state.shapes.indexOf(a) ? b : a)).group;
       }
       region.group = gid;
-      undoStack.push(state.shapes.slice());
-      redoStack.length = 0;
+      pushStep();
       state.shapes = next.concat([region]);
       select([]);
       afterChange();
@@ -3070,6 +3249,7 @@
     }
     mode = 'draw';
     pressAt = s;
+    if (state.tool === 'warp') { startWarp(s); return; }
     if (startDraw(w, e) === false) {
       // nothing under the cursor to pick up — drag the plane instead
       mode = 'pan';
@@ -3094,8 +3274,13 @@
     const w = drawPt(s.x, s.y);
     lastWorld = w;
     noteHover(w);
+    if (warpDrag) { moveWarp(s); return; }
     if (pending === 'bend') { bendPending(w); return; }
     if (pending === 'point' || mode === 'draw') { moveDraw(w); return; }
+    if (state.tool === 'warp') {
+      canvas.classList.toggle('grabbable', !!anchorAt(s));
+      return;
+    }
     if (state.tool === 'select') {
       const g = gripAt(w);
       const was = hoverGrip ? `${hoverGrip.kind}${hoverGrip.at}${hoverGrip.x || 0}` : '';
@@ -3126,6 +3311,7 @@
     }
     const dragged = !!pressAt && Math.hypot(s.x - pressAt.x, s.y - pressAt.y) >= DRAG_MIN;
     pressAt = null;
+    if (warpDrag) { endWarp(e.type !== 'pointercancel'); mode = null; return; }
     if (mode === 'pinch') {
       if (pointers.size < 2) { mode = null; pinchFrom = null; }
       return;
@@ -3193,12 +3379,11 @@
     const box = lassoBox();
     if (!box) return;
     const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]
-      .map(([x, y]) => { const q = fromTileSpace({ x, y }); return w2s(q.x, q.y); });
+      .map(([x, y]) => fromTileSpace({ x, y }));
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.closePath();
+    // Through the warp, the sweep is as bent as the paper it covers.
+    tracePlane(pts, true);
     ctx.fillStyle = 'rgba(207, 67, 38, 0.07)';
     ctx.fill();
     ctx.strokeStyle = ACCENT;
@@ -3264,7 +3449,7 @@
 
   const TOOL_KEYS = {
     ' ': 'select', p: 'pencil', l: 'line', a: 'curve',
-    c: 'circle', r: 'rect', f: 'fill', e: 'erase',
+    c: 'circle', r: 'rect', f: 'fill', e: 'erase', w: 'warp',
   };
 
   window.addEventListener('keydown', (e) => {
@@ -3305,6 +3490,13 @@
     }
     if (meta) return;
 
+    if (state.tool === 'warp' && state.warp.anchors[warpSel]
+        && (e.key === 'Delete' || e.key === 'Backspace')) {
+      e.preventDefault();
+      removeAnchor();
+      return;
+    }
+
     if (picked.length && !draft && !pending) {
       const far = e.altKey || e.ctrlKey ? 5 : 1;
       const step = (snapping() ? T / effSub() : 10) * far;
@@ -3330,6 +3522,12 @@
     }
     if (e.key === 'Escape') {
       if (dropper) { armDropper(false); return; }
+      if (state.tool === 'warp' && !warpDrag && warpSel >= 0) {
+        warpSel = -1;
+        syncWarpPanel();
+        requestDraw();
+        return;
+      }
       if (endLasso(true)) { requestDraw(); return; }
       if (!cancelDraft() && picked.length) { select([]); requestDraw(); }
       return;
@@ -3396,6 +3594,7 @@
     state.tool = tool;
     canvas.classList.toggle('selecting', tool === 'select');
     canvas.classList.remove('grabbable');
+    requestDraw();       // the anchors show only while the warp tool is up
     for (const b of document.querySelectorAll('.tool')) b.classList.toggle('on', b.dataset.tool === tool);
     setHint(HINTS[tool] || HINTS.base);
     saveSoon();
@@ -4162,6 +4361,265 @@
     b.addEventListener('click', () => toggle(b.dataset.toggle));
   }
 
+  /* warp ---------------------------------------------------------- */
+
+  /* Anchors on the plane and the rail that works on them; what an anchor
+     does is in warp.js. Every change replaces `state.warp` whole and goes
+     on the undo stack with the marks. A slider run or a drag is one step,
+     as it is for ink. */
+
+  let warpSel = -1;      // the anchor in hand
+  let warpDrag = null;   // an anchor being moved or sized, or a press that may yet drop one
+
+  const warpAmount = document.getElementById('warpAmount');
+  const warpBulge = document.getElementById('warpBulge');
+  const warpTwirl = document.getElementById('warpTwirl');
+  const warpRadius = document.getElementById('warpRadius');
+  const DOT_R = 10;      // how near a press has to come to an anchor's dot
+
+  function cleanWarp(w) {
+    const out = { amount: 1, repeat: 'plane', ink: 'swell', anchors: [] };
+    if (!w || typeof w !== 'object') return out;
+    if (typeof w.amount === 'number' && isFinite(w.amount)) out.amount = clamp(w.amount, 0, 1);
+    if (w.repeat === 'tile') out.repeat = 'tile';
+    if (w.ink === 'bend') out.ink = 'bend';
+    if (Array.isArray(w.anchors)) {
+      out.anchors = w.anchors
+        .filter((a) => a && [a.x, a.y, a.r].every((v) => typeof v === 'number' && isFinite(v)))
+        .slice(0, 64)
+        .map((a) => ({
+          x: a.x, y: a.y, r: clamp(a.r, 10, 5000),
+          bulge: clamp(+a.bulge || 0, -1, 1), twirl: clamp(+a.twirl || 0, -1, 1),
+        }));
+    }
+    return out;
+  }
+
+  function setWarp(next, merge) {
+    if (!merge) pushStep();
+    state.warp = next;
+    afterChange();
+    syncWarpPanel();
+  }
+
+  const withAnchor = (k, patch) => ({
+    ...state.warp,
+    anchors: state.warp.anchors.map((a, i) => (i === k ? { ...a, ...patch } : a)),
+  });
+
+  const inSquare = (q) => ({ x: clamp(q.x, 0, T), y: clamp(q.y, 0, T) });
+
+  /* Where anchor k has to go for its dot to show under the screen point
+     `s` — in square (i, j)'s own frame where anchors repeat. Aimed rather
+     than simply taken back through the warp, so that it lands under the
+     hand inside another anchor's disc as well. */
+  function aimAt(spec, k, i, j, s) {
+    const own = (q) => (i == null ? { x: q.x, y: q.y } : inSquare(unplaceIn(q, i, j)));
+    return own(aimAnchor(spec, state.pattern, k, toPlane(s.x, s.y), own));
+  }
+
+  // Every anchor at every place it sits in range, where the warp shows it.
+  function anchorHandles(R) {
+    const out = [];
+    const tiled = state.warp.repeat === 'tile';
+    const squares = (R.i1 - R.i0 + 1) * (R.j1 - R.j0 + 1);
+    state.warp.anchors.forEach((a, k) => {
+      if (!tiled) { out.push({ k, i: null, j: null, c: a, r: a.r }); return; }
+      if (squares > 400) return;
+      for (let j = R.j0; j <= R.j1; j++) {
+        for (let i = R.i0; i <= R.i1; i++) out.push({ k, i, j, c: placeIn(a, i, j), r: a.r });
+      }
+    });
+    for (const h of out) {
+      h.at = w2s(h.c.x, h.c.y);
+      h.grip = w2s(h.c.x + h.r, h.c.y);
+    }
+    return out;
+  }
+
+  // The rim grip of the anchor in hand, or else the nearest dot.
+  function anchorAt(s) {
+    let best = null;
+    for (const h of anchorHandles(tileRange())) {
+      if (h.k === warpSel && Math.hypot(h.grip.x - s.x, h.grip.y - s.y) <= SIZE_R) return { h, part: 'rim' };
+      const d = Math.hypot(h.at.x - s.x, h.at.y - s.y);
+      if (d <= DOT_R && (!best || d < best.d)) best = { h, part: 'centre', d };
+    }
+    return best;
+  }
+
+  /* A dot on each anchor, and a ring for its disc: round every anchor on
+     the plane, and round the one in hand where anchors repeat — a ring in
+     every square would bury the drawing. The one in hand has a grip on
+     its rim for the radius. */
+  function drawAnchors(R) {
+    const tiled = state.warp.repeat === 'tile';
+    ctx.save();
+    for (const h of anchorHandles(R)) {
+      const held = h.k === warpSel;
+      if (held || !tiled) {
+        ctx.beginPath();
+        traceRun(circleRun(h.c, h.r));
+        ctx.setLineDash(held ? [6, 4] : [2, 4]);
+        ctx.lineWidth = held ? 1.5 : 1;
+        ctx.strokeStyle = held ? ACCENT : 'rgba(23,22,15,0.5)';
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.beginPath();
+      ctx.arc(h.at.x, h.at.y, held ? 5.5 : 4, 0, Math.PI * 2);
+      ctx.fillStyle = held ? ACCENT : '#ffffff';
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = '#17160f';
+      ctx.stroke();
+      if (held) {
+        ctx.beginPath();
+        ctx.rect(h.grip.x - GRIP, h.grip.y - GRIP, GRIP * 2, GRIP * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function startWarp(s) {
+    const hit = anchorAt(s);
+    if (hit) {
+      warpSel = hit.h.k;
+      warpDrag = { kind: hit.part, h: hit.h, press: s, moved: false, pushed: false };
+      syncWarpPanel();
+      requestDraw();
+      return;
+    }
+    warpDrag = { kind: 'press', press: s, vx: state.view.x, vy: state.view.y, moved: false };
+  }
+
+  function moveWarp(s) {
+    const d = warpDrag;
+    if (!d.moved && Math.hypot(s.x - d.press.x, s.y - d.press.y) < DRAG_MIN) return;
+    d.moved = true;
+    if (d.kind === 'press') {
+      // Pressed on bare paper and pulled: the plane pans.
+      state.view.x = d.vx + s.x - d.press.x;
+      state.view.y = d.vy + s.y - d.press.y;
+      canvas.classList.add('panning');
+      requestDraw();
+      return;
+    }
+    const k = d.h.k;
+    if (d.kind === 'centre') {
+      setWarp(withAnchor(k, aimAt(state.warp, k, d.h.i, d.h.j, s)), d.pushed);
+    } else {
+      // A disc leaves its own rim where it is, so the rim is read back
+      // through every anchor but this one.
+      const a = state.warp.anchors[k];
+      const w = makeWarp(state.warp, state.pattern, k).unwarp(toPlane(s.x, s.y));
+      const c = d.h.i == null ? a : placeIn(a, d.h.i, d.h.j);
+      setWarp(withAnchor(k, { r: clamp(Math.hypot(w.x - c.x, w.y - c.y), 10, 5000) }), d.pushed);
+    }
+    d.pushed = true;
+  }
+
+  // `landed` is false when the press was taken away rather than let go.
+  function endWarp(landed) {
+    const d = warpDrag;
+    warpDrag = null;
+    canvas.classList.remove('panning');
+    if (d.kind === 'press' && !d.moved && landed) dropAnchor(d.press);
+    requestDraw();
+  }
+
+  function dropAnchor(s) {
+    const w = toWorld(s.x, s.y);
+    const tiled = state.warp.repeat === 'tile';
+    const i = tiled ? Math.floor(w.x / T) : null, j = tiled ? Math.floor(w.y / T) : null;
+    const at = tiled ? unplaceIn(w, i, j) : w;
+    const anchors = state.warp.anchors.concat([
+      { x: at.x, y: at.y, r: tiled ? 250 : 400, bulge: 0.5, twirl: 0 },
+    ]);
+    const k = anchors.length - 1;
+    anchors[k] = { ...anchors[k], ...aimAt({ ...state.warp, anchors }, k, i, j, s) };
+    warpSel = k;
+    setWarp({ ...state.warp, anchors });
+    flash(state.warp.amount > 0
+      ? 'Anchor dropped — drag its dot to move it, the square on its rim to size it'
+      : 'Anchor dropped — but the warp amount is at nothing, so it has nothing to show');
+  }
+
+  function removeAnchor() {
+    if (!state.warp.anchors[warpSel]) return;
+    const k = warpSel;
+    warpSel = -1;
+    setWarp({ ...state.warp, anchors: state.warp.anchors.filter((a, i) => i !== k) });
+    flash('Anchor removed');
+  }
+
+  function syncWarpPanel() {
+    const w = state.warp;
+    warpAmount.value = Math.round(w.amount * 100);
+    document.getElementById('warpAmountVal').textContent = warpAmount.value;
+    for (const b of document.getElementById('warpRepeat').children) b.classList.toggle('on', b.dataset.repeat === w.repeat);
+    for (const b of document.getElementById('warpInk').children) b.classList.toggle('on', b.dataset.ink === w.ink);
+    const a = w.anchors[warpSel];
+    const none = document.getElementById('warpNone');
+    document.getElementById('warpAnchor').hidden = !a;
+    none.hidden = !!a;
+    const count = w.anchors.length;
+    none.textContent = count
+      ? `${count} ${count === 1 ? 'anchor' : 'anchors'} · with the warp tool up, click a dot to hold one`
+      : 'Pick up the warp tool (W) and click the paper to drop an anchor.';
+    if (!a) return;
+    warpBulge.value = Math.round(a.bulge * 100);
+    document.getElementById('warpBulgeVal').textContent = warpBulge.value;
+    warpTwirl.value = Math.round(a.twirl * 100);
+    document.getElementById('warpTwirlVal').textContent = warpTwirl.value;
+    warpRadius.value = Math.round(a.r);
+    document.getElementById('warpRadiusVal').textContent = Math.round(a.r);
+  }
+
+  warpAmount.addEventListener('input', () => {
+    setWarp({ ...state.warp, amount: +warpAmount.value / 100 }, sliderRun);
+    sliderRun = true;
+  });
+  const anchorSlider = (el, read) => el.addEventListener('input', () => {
+    if (!state.warp.anchors[warpSel]) return;
+    setWarp(withAnchor(warpSel, read(+el.value)), sliderRun);
+    sliderRun = true;
+  });
+  anchorSlider(warpBulge, (v) => ({ bulge: v / 100 }));
+  anchorSlider(warpTwirl, (v) => ({ twirl: v / 100 }));
+  anchorSlider(warpRadius, (v) => ({ r: v }));
+  for (const el of [warpAmount, warpBulge, warpTwirl, warpRadius]) {
+    el.addEventListener('change', () => { sliderRun = false; });
+  }
+
+  /* Switching how anchors sit keeps each where it was as near as it can:
+     one on the plane goes into the square it was over, and one in a
+     square comes out at that square's place in the first one. */
+  document.getElementById('warpRepeat').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-repeat]');
+    if (!b || b.dataset.repeat === state.warp.repeat) return;
+    const tiled = b.dataset.repeat === 'tile';
+    const anchors = tiled
+      ? state.warp.anchors.map((a) => ({
+        ...a, ...unplaceIn(a, Math.floor(a.x / T), Math.floor(a.y / T)), r: Math.min(a.r, T),
+      }))
+      : state.warp.anchors;
+    setWarp({ ...state.warp, repeat: b.dataset.repeat, anchors });
+    flash(tiled ? 'Anchors repeat in every square — still a tiling' : 'Anchors sit once on the plane — a lens');
+  });
+
+  document.getElementById('warpInk').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ink]');
+    if (!b || b.dataset.ink === state.warp.ink) return;
+    setWarp({ ...state.warp, ink: b.dataset.ink });
+  });
+
+  document.getElementById('warpRemove').addEventListener('click', removeAnchor);
+
   /* symmetry ------------------------------------------------------ */
 
   // An arrow is the clearest possible read on which way a tile faces.
@@ -4277,6 +4735,9 @@
     setColor(DEFAULTS.color, false, true);
     setSub(DEFAULTS.sub);
     state.view = { ...DEFAULTS.view };
+    state.warp = DEFAULTS.warp;
+    warpSel = -1;
+    syncWarpPanel();
     syncToggles();
     adoptShapes([]);
     setFile(null, '');
@@ -4402,7 +4863,7 @@
       pattern: state.pattern,
       plane: {
         grid: state.grid, arrows: state.arrows, snap: state.snap,
-        sub: state.sub, subLast: state.subLast, diag: state.diag,
+        sub: state.sub, subLast: state.subLast, diag: state.diag, warp: state.warp,
       },
       ink: { color: state.color, width: state.width, filled: state.filled },
       palette: {
@@ -4480,6 +4941,11 @@
     if (plane.sub === 0 || SUBS.includes(plane.sub)) state.sub = plane.sub;
     if (SUBS.includes(plane.subLast)) state.subLast = plane.subLast;
     if (DIAG_MODES.some(([id]) => id === plane.diag)) setDiag(plane.diag, true);
+    // A warp belongs to the drawing it was set up on. One saved before
+    // there was a warp had none, and opens flat.
+    state.warp = cleanWarp(plane.warp);
+    warpSel = -1;
+    syncWarpPanel();
 
     const pal = d.palette || {};
     if (Array.isArray(pal.palettes)) {
@@ -4663,29 +5129,63 @@
       return `${attr}="url(#${id})"`;
     }
 
-    const body = [];
-    {
-      for (const entry of paintOrder(state.shapes)) {
+    /* One square's marks. Handed a square, the copies the warp reaches
+       there are written warped, in that square's own frame, and `bent`
+       says whether there were any; handed none, it is the plain tile. */
+    const order = paintOrder(state.shapes);
+    findCrossJunctions();
+    const svgWarp = { tol: 0.25, bucket: 'svg', ink: state.warp.ink };
+    const marksFor = (at) => {
+      const out = [];
+      let bent = false;
+      for (const entry of order) {
         // A mark's interior comes through on its own, at fill depth.
         const s = entry.inside || entry;
-        const d = pathData(s);
+        const part = entry.inside ? 'inside' : s.fillColor ? 'outline' : undefined;
+        const got = at ? warpedCopy(s, part, at.i, at.j, svgWarp) : null;
+        if (got) bent = true;
+        const d = got ? linesData(got.lines) : pathData(s);
         if (!d) continue;
         if (entry.inside) {
-          body.push(`<path d="${d}" ${svgInk('fill', s.fillColor, s)}/>`);
+          out.push(`<path d="${d}" ${svgInk('fill', s.fillColor, s)}/>`);
           continue;
         }
-        if (s.layer === 'fill') body.push(`<path d="${d}" ${svgInk('fill', s.color, s)} fill-rule="evenodd"/>`);
-        else if (s.filled) body.push(`<path d="${d}" ${svgInk('fill', s.color, s)}/>`);
+        if (s.layer === 'fill') out.push(`<path d="${d}" ${svgInk('fill', s.color, s)} fill-rule="evenodd"/>`);
+        // Swelled, a stroke is written as the area it covers.
+        else if (s.filled || (got && got.how === 'nonzero')) out.push(`<path d="${d}" ${svgInk('fill', s.color, s)}/>`);
         else {
           const [cap, join] = capsOf(s.kind);
-          body.push(`<path d="${d}" fill="none" ${svgInk('stroke', s.color, s)}`
+          out.push(`<path d="${d}" fill="none" ${svgInk('stroke', s.color, s)}`
             + ` stroke-width="${s.width}" stroke-linecap="${cap}" stroke-linejoin="${join}"/>`);
-          if (ROUNDABLE[s.kind]) {
+          if (got) {
+            if (got.discs.length) out.push(`<path d="${linesData(got.discs)}" ${svgInk('fill', s.color, s)}/>`);
+          } else if (ROUNDABLE[s.kind]) {
             for (const p of endpointsOf(s)) {
               if (!junctions.has(jkey(p))) continue;
-              body.push(`<circle cx="${p.x}" cy="${p.y}" r="${s.width / 2}" ${svgInk('fill', s.color, s)}/>`);
+              out.push(`<circle cx="${p.x}" cy="${p.y}" r="${s.width / 2}" ${svgInk('fill', s.color, s)}/>`);
             }
           }
+        }
+      }
+      return { bent, text: out.join('\n      ') };
+    };
+    const plain = marksFor(null).text;
+
+    /* A warp that repeats is the same in every square a block along, so
+       each square of the block the warp reaches gets one definition, and
+       every square on the sheet points at its own. A lens is on the plane
+       once: the squares it reaches are written out in full where they
+       stand, and every other square is the plain tile, as it always was. */
+    const warp = warpField();
+    const bentDefs = [];
+    const cellDef = new Map();
+    if (warp.active && warp.tiled) {
+      for (let cj = 0; cj < n; cj++) {
+        for (let ci = 0; ci < n; ci++) {
+          const b = marksFor({ i: ci, j: cj });
+          if (!b.bent) continue;
+          cellDef.set(`${ci},${cj}`, `tile-${ci}-${cj}`);
+          bentDefs.push(`<g id="tile-${ci}-${cj}">\n      ${b.text}\n    </g>`);
         }
       }
     }
@@ -4695,7 +5195,15 @@
       for (let i = ia; i <= ib; i++) {
         const r = rotAt(state.pattern, i, j);
         const t = `translate(${i * T} ${j * T})` + (r ? ` rotate(${r * 90} ${T / 2} ${T / 2})` : '');
-        uses.push(`<use href="#tile" xlink:href="#tile" transform="${t}"/>`);
+        if (warp.active && !warp.tiled) {
+          const b = marksFor({ i, j });
+          if (b.bent) {
+            uses.push(`<g transform="${t}">\n    ${b.text}\n  </g>`);
+            continue;
+          }
+        }
+        const id = (warp.active && warp.tiled && cellDef.get(`${mod(i, n)},${mod(j, n)}`)) || 'tile';
+        uses.push(`<use href="#${id}" xlink:href="#${id}" transform="${t}"/>`);
       }
     }
 
@@ -4705,8 +5213,9 @@
   <defs>
     ${defs.join('\n    ')}
     <g id="tile">
-      ${body.join('\n      ')}
+      ${plain}
     </g>
+    ${bentDefs.join('\n    ')}
   </defs>
   ${uses.join('\n  ')}
 </svg>
@@ -4727,7 +5236,7 @@
           color: state.color, width: state.width, filled: state.filled,
           palette: state.palette, palettes: state.palettes, recent: state.recent,
           grid: state.grid, arrows: state.arrows, snap: state.snap, sub: state.sub,
-          subLast: state.subLast, diag: state.diag,
+          subLast: state.subLast, diag: state.diag, warp: state.warp,
         }));
       } catch (err) { /* private mode, quota — not worth interrupting for */ }
     }, 400);
@@ -4770,6 +5279,7 @@
     if (SUBS.includes(d.subLast)) state.subLast = d.subLast;
     else if (state.sub) state.subLast = state.sub;
     if (Object.values(TOOL_KEYS).includes(d.tool)) state.tool = d.tool;
+    if (d.warp) state.warp = cleanWarp(d.warp);
   }
 
   /* ---------------- boot ---------------- */
@@ -4785,6 +5295,7 @@
   setColor(state.color);
   setWidth(state.width);
   syncToggles();
+  syncWarpPanel();
   resize();
   afterChange();
   setDirty(false);   // what was restored is what was last put down

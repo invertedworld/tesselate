@@ -100,7 +100,9 @@ button:hover { background: var(--ink-06); }
 button:active { transform: translateY(0.5px); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+/* Nine tools, three to a row: four to a row left the warp on a row of
+   its own. */
+.tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .tool {
   position: relative;
   display: flex;

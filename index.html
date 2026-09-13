@@ -89,6 +89,10 @@
         <svg viewBox="0 0 24 24"><path d="M9.2 19.6l-4.8-4.8 8.4-8.4 4.8 4.8z"/><path d="M9.2 19.6h10.4"/></svg>
         <em>Erase</em>
       </button>
+      <button class="tool" data-tool="warp" title="Warp — W (click the paper to drop an anchor; drag its dot to move it, the square on its rim to size it)">
+        <svg viewBox="0 0 24 24"><path d="M3.8 8.4c5.4-2.9 11-2.9 16.4 0"/><path d="M3.8 15.6c5.4 2.9 11 2.9 16.4 0"/><path d="M8.4 3.8c-2.9 5.4-2.9 11 0 16.4"/><path d="M15.6 3.8c2.9 5.4 2.9 11 0 16.4"/></svg>
+        <em>Warp</em>
+      </button>
     </div>
     <button class="wide toggle" data-toggle="snap" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
     <div class="grid2 binders">
@@ -223,6 +227,48 @@
     </div>
   </section>
 
+  <section class="panel" id="warpPanel">
+    <div class="label"><span>Warp</span><i></i></div>
+    <div class="row slide">
+      <span class="mono tiny">Amount</span>
+      <input type="range" id="warpAmount" min="0" max="100" step="1" value="100" aria-label="Warp amount">
+      <span class="mono num" id="warpAmountVal">100</span>
+    </div>
+    <div class="sub-row">
+      <span class="mono tiny">Anchors</span>
+      <div class="modes" id="warpRepeat">
+        <button data-repeat="plane" title="Each anchor sits once, where it was put — a lens over the pattern">Plane</button>
+        <button data-repeat="tile" title="Each anchor sits in every square, turned with it — still a tiling">Tile</button>
+      </div>
+    </div>
+    <div class="sub-row">
+      <span class="mono tiny">Ink</span>
+      <div class="modes" id="warpInk">
+        <button data-ink="bend" title="Strokes follow the warp and keep the width they were given">Bends</button>
+        <button data-ink="swell" title="Strokes are warped as the area they cover, so a bulge thickens them too">Swells</button>
+      </div>
+    </div>
+    <p class="note" id="warpNone"></p>
+    <div id="warpAnchor" hidden>
+      <div class="row slide">
+        <span class="mono tiny">Bulge</span>
+        <input type="range" id="warpBulge" min="-100" max="100" step="1" value="50" aria-label="Bulge">
+        <span class="mono num" id="warpBulgeVal">50</span>
+      </div>
+      <div class="row slide">
+        <span class="mono tiny">Twirl</span>
+        <input type="range" id="warpTwirl" min="-100" max="100" step="1" value="0" aria-label="Twirl">
+        <span class="mono num" id="warpTwirlVal">0</span>
+      </div>
+      <div class="row slide">
+        <span class="mono tiny">Radius</span>
+        <input type="range" id="warpRadius" min="10" max="2000" step="5" value="400" aria-label="Radius">
+        <span class="mono num" id="warpRadiusVal">400</span>
+      </div>
+      <button class="wide" id="warpRemove" title="Remove the anchor in hand — Delete">Remove anchor</button>
+    </div>
+  </section>
+
   <section class="panel" id="symmetryPanel">
     <div class="label"><span>Symmetry</span><i></i></div>
     <div class="chips" id="presets"></div>
@@ -243,6 +289,7 @@
 
 <script src="src/geometry.js"></script>
 <script src="src/patterns.js"></script>
+<script src="src/warp.js"></script>
 <script src="src/app.js"></script>
 </body>
 </html>
