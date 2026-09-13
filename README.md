@@ -45,7 +45,7 @@ right out before letting go counts as finishing it.
 | Tool | |
 |---|---|
 | **Select** `Space` | Click a mark to pick it up, drag to move it. `⌘A` picks up everything on the tile. **Shift-click** adds another to what you are holding, or puts it back down; a **two-finger sweep** takes everything in an area (see below). Outlined shapes can be grabbed by their middle. A click picks a mark up without moving it: nothing moves until the press has travelled as far as a drag. A mark dragged well away comes back towards its square — the plane repeats, so it is the same mark a whole symmetry block over, where every square is turned the way the one it left was and nothing you can see moves |
-| **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Hold `Ctrl` (or `Alt`) as you let go and it is kept exactly as drawn instead. Held drag only, and it ignores the grid entirely |
+| **Pencil** `P` | Freehand, tidied when you let go: its wobble is eased out along the stroke and the points that then carry no shape are dropped, with the ends pinned where your hand started and finished. How far is *Smooth*, under the tools: at 0 the stroke is kept exactly as drawn, low settings take out the jitter of the hand, and high ones even out broader wobbles too. The easing is measured along the stroke itself, so it is the same however fast you drew. It belongs to your hand rather than the drawing, so it stays with the table. Hold `Ctrl` (or `Alt`) as you let go and it is kept exactly as drawn instead. Held drag only, and it ignores the grid entirely |
 | **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. A line pulled out in one drag is a single line, not the start of a chain. Hold `Alt` to hold it horizontal, vertical or to 45° — to one of the six isometric ways out on the Iso frame; with a lattice up the length is quantised along that direction too |
 | **Arc** `A` | Two clicks for the ends — or one drag — then move to bend it and click to set. An arc owes its bend either way, so the drag sets the chord and hands it on to be bent. Hold `Alt` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
 | **Circle** `C` | Drag rim to rim, or click each end of a diameter — both points you place land on the circle. Hold `Alt` **as you start** to grow it from the centre instead: the first point is then the middle and the second sets the radius |
@@ -53,6 +53,14 @@ right out before letting go counts as finishing it.
 | **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. On an empty tile there is nothing holding an area in, so the whole square fills, and it comes out as the ground. Click a border and that border takes the current ink. Click inside a figure that is filled already and the whole figure takes it — every fill in it and every border grouped with it — even where its border has since been moved or sized away from it. The first fill of an outlined area leaves the outline its own colour, and an already-filled area can still be cut up by new lines and its parts filled separately |
 | **Erase** `E` | Click or drag across a mark to remove it. A border answers before the interior of the mark holding it, and before a fill, so a line drawn across a filled shape can still be got at — and a mark can be rubbed out by any of its ink, including the part that has run over a neighbouring square |
 | **Warp** `W` | Click the paper to drop an anchor, and the plane bends round it — see [Warp](#warp). Drag an anchor's dot to move it and the square on its rim to size it; `Delete` removes the anchor in hand. Dragging bare paper pans |
+
+Directly under the tools are the controls for the tool in hand, and no others:
+*Snap to grid and geometry* for the tools that snap — Select, Line, Arc, Circle
+and Rect; the group, turn, depth and clipboard buttons for Select, since they
+work on what it is holding; *Filled shapes* for Circle and Rect; *Smooth* for the
+pencil; and the warp's own controls for Warp. The fill and the eraser have
+none, and the space closes up. The keys work whichever tool is up — `S` still switches
+snapping from the pencil.
 
 Straight geometry is stroked with **flat ends**, so a line stops exactly on
 the point it was placed on and runs flush to the tile edge to meet its own
@@ -230,7 +238,8 @@ exactly where you drew it and the pattern follows.
 Marks may start on the tile edge and run past it — that is how a motif is made
 to carry across the seam.
 
-*Filled shapes* fills circles and rectangles instead of outlining them.
+*Filled shapes* fills circles and rectangles instead of outlining them. It sits
+under the tools while Circle or Rect is in hand.
 
 **Recently mixed** is a strip of ten smaller slots under the palette. Ink you
 make rather than pick lands there on its own — a colour dimmed, a hex typed, a
@@ -625,6 +634,8 @@ its way in — the way the 45° frame takes it back through the angle — so
 everything else works through it unchanged. A line drawn in a bulge lands where
 the pointer put it, snapping catches the bent lattice, a click picks up the
 mark it lands on, and the fill tool floods the area under the pointer.
+
+Its controls sit directly under the tools while Warp is in hand:
 
 | | |
 |---|---|

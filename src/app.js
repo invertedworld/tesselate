@@ -282,6 +282,7 @@
     tool: 'pencil',
     color: PALETTE[2],
     width: 9,
+    smooth: 25,         // how far the pencil tidies a stroke, 0 to 100
     palette: BUILT_IN[0].name,
     palettes: [],       // the user's own named palettes
     recent: [],         // ink mixed rather than picked, newest first
@@ -2383,7 +2384,14 @@
          Ctrl or Alt is down as it is let go, which keeps every point the
          hand laid. Read at the release rather than the press, so it can
          be decided with the stroke already down. */
-      if (!constrain()) draft.pts = smoothPath(draft.pts, 1.6 / state.view.scale);
+      if (!constrain() && state.smooth > 0) {
+        /* Smooth sets how far along the stroke the easing reaches, on the
+           screen: about two pixels at 25, which takes out the jitter of a
+           hand, and sixteen at 100, which evens out a broad wobble. At
+           nothing, nothing is touched. */
+        const radius = 16 * Math.pow(state.smooth / 100, 1.5);
+        draft.pts = smoothPath(draft.pts, (0.5 + 0.35 * radius) / state.view.scale, radius / state.view.scale);
+      }
       commitLive();
       return;
     }
@@ -3915,6 +3923,14 @@
     canvas.classList.remove('grabbable');
     requestDraw();       // the anchors show only while the warp tool is up
     for (const b of document.querySelectorAll('.tool')) b.classList.toggle('on', b.dataset.tool === tool);
+    /* Under the tools, the controls of the tool in hand and no others:
+       snapping for the tools that snap, the buttons that work on what is
+       held for Select, Filled shapes for Circle and Rect, Smooth for the
+       pencil, and the warp for Warp. Each says in `data-for` which tools it
+       belongs to. */
+    for (const el of document.querySelectorAll('[data-for]')) {
+      el.hidden = !el.dataset.for.split(' ').includes(tool);
+    }
     setHint(HINTS[tool] || HINTS.base);
     saveSoon();
   }
@@ -4672,6 +4688,20 @@
     sliderRun = true;
   });
 
+  /* How far the pencil tidies a stroke as it is let go. A setting of the
+     hand rather than of the picture, so it is kept with the table, not
+     written into the drawing. */
+  const smoothInput = document.getElementById('smooth');
+  function syncSmooth() {
+    smoothInput.value = state.smooth;
+    document.getElementById('smoothVal').textContent = state.smooth;
+  }
+  smoothInput.addEventListener('input', () => {
+    state.smooth = clamp(Math.round(+smoothInput.value), 0, 100);
+    syncSmooth();
+    saveSoon();
+  });
+
   // Letting go of any slider closes its run, so the next one is its own
   // step to undo.
   for (const el of [alphaInput, document.getElementById('width'), gradAlpha, gradAngle]) {
@@ -4888,9 +4918,10 @@
     document.getElementById('warpAnchor').hidden = !a;
     none.hidden = !!a;
     const count = w.anchors.length;
+    // Shown only while the warp tool is in hand, so it need not ask for it.
     none.textContent = count
-      ? `${count} ${count === 1 ? 'anchor' : 'anchors'} · with the warp tool up, click a dot to hold one`
-      : 'Pick up the warp tool (W) and click the paper to drop an anchor.';
+      ? `${count} ${count === 1 ? 'anchor' : 'anchors'} · click a dot to hold one, or the paper for another`
+      : 'Click the paper to drop an anchor.';
     if (!a) return;
     warpBulge.value = Math.round(a.bulge * 100);
     document.getElementById('warpBulgeVal').textContent = warpBulge.value;
@@ -5556,7 +5587,7 @@
           color: state.color, width: state.width, filled: state.filled,
           palette: state.palette, palettes: state.palettes, recent: state.recent,
           grid: state.grid, arrows: state.arrows, snap: state.snap, sub: state.sub,
-          subLast: state.subLast, diag: state.diag, warp: state.warp,
+          subLast: state.subLast, diag: state.diag, warp: state.warp, smooth: state.smooth,
         }));
       } catch (err) { /* private mode, quota — not worth interrupting for */ }
     }, 400);
@@ -5600,6 +5631,7 @@
     else if (state.sub) state.subLast = state.sub;
     if (Object.values(TOOL_KEYS).includes(d.tool)) state.tool = d.tool;
     if (d.warp) state.warp = cleanWarp(d.warp);
+    if (typeof d.smooth === 'number' && isFinite(d.smooth)) state.smooth = clamp(Math.round(d.smooth), 0, 100);
   }
 
   /* ---------------- boot ---------------- */
@@ -5616,6 +5648,7 @@
   setWidth(state.width);
   syncToggles();
   syncWarpPanel();
+  syncSmooth();
   resize();
   afterChange();
   setDirty(false);   // what was restored is what was last put down

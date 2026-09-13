@@ -659,22 +659,47 @@ function isoRun(a, w, n, quantise, skip) {
   return { x: a.x + ux * q, y: a.y + uy * q };
 }
 
-/* Tidy a freehand stroke: drop the points that carry no shape, then
-   ease what is left. The ends are pinned so the stroke still starts
-   and finishes where the hand did. */
-function smoothPath(pts, eps) {
+/* Tidy a freehand stroke: ease its wobble out over `radius`, then drop
+   the points that no longer carry any shape (`eps`).
+
+   The easing is a gaussian taken along the stroke's own length — the
+   stroke is first laid out in even steps, a third of the radius apart —
+   so it smooths the same however fast or slow the hand moved, and a
+   bigger radius reaches a broader wobble. Easing a point with its
+   neighbours only, as this used to, took out the jitter between one
+   sample and the next and nothing longer, however many times it ran.
+   The ends are pinned, and the easing narrows towards them, so the
+   stroke still starts and finishes where the hand did. */
+function smoothPath(pts, eps, radius) {
   if (pts.length < 3) return pts;
-  let out = simplify(pts, eps);
-  for (let pass = 0; pass < 2 && out.length > 2; pass++) {
-    const next = [out[0]];
-    for (let i = 1; i < out.length - 1; i++) {
-      const a = out[i - 1], b = out[i], c = out[i + 1];
-      next.push({ x: (a.x + 2 * b.x + c.x) / 4, y: (a.y + 2 * b.y + c.y) / 4 });
+  if (!(radius > 0)) return simplify(pts, eps);
+  const step = radius / 3;
+  const even = [pts[0]];
+  let since = 0;                       // how far along since the last step laid
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    let t = step - since;
+    for (; t <= len; t += step) {
+      even.push({ x: a.x + ((b.x - a.x) * t) / len, y: a.y + ((b.y - a.y) * t) / len });
     }
-    next.push(out[out.length - 1]);
-    out = next;
+    since = len - (t - step);
   }
-  return out;
+  even.push(pts[pts.length - 1]);
+  const n = even.length;
+  const reach = 9;                     // three standard deviations, in steps
+  const weight = [];
+  for (let k = 0; k <= reach; k++) weight.push(Math.exp(-(k * k) / 18));
+  const eased = even.map((p, i) => {
+    const w = Math.min(reach, i, n - 1 - i);
+    let sx = 0, sy = 0, sw = 0;
+    for (let k = -w; k <= w; k++) {
+      const q = even[i + k], g = weight[k < 0 ? -k : k];
+      sx += q.x * g; sy += q.y * g; sw += g;
+    }
+    return { x: sx / sw, y: sy / sw };
+  });
+  return simplify(eased, eps);
 }
 
 /* The loose ends of an open mark. Closed shapes have none. */

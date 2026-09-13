@@ -94,12 +94,12 @@
         <em>Warp</em>
       </button>
     </div>
-    <button class="wide toggle" data-toggle="snap" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
-    <div class="grid2 binders">
+    <button class="wide toggle" data-toggle="snap" data-for="select line curve circle rect" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
+    <div class="grid2 binders" data-for="select">
       <button class="wide" id="groupBtn" title="Bind what you are holding into one thing — G or ⌘G" disabled>Group</button>
       <button class="wide" id="ungroupBtn" title="Let it loose again — U or ⇧⌘G" disabled>Ungroup</button>
     </div>
-    <div class="grid4 binders">
+    <div class="grid4 binders" data-for="select">
       <button class="wide turn" id="turnLeftBtn" title="Turn what you are holding 45° anticlockwise" aria-label="Turn anticlockwise" disabled>
         <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
       </button>
@@ -113,7 +113,7 @@
         <svg viewBox="0 0 24 24"><path d="M2.6 12h18.8"/><path d="M6.9 9.1L12 3.4l5.1 5.7z"/><path d="M6.9 14.9L12 20.6l5.1-5.7z"/></svg>
       </button>
     </div>
-    <div class="grid4 binders">
+    <div class="grid4 binders" data-for="select">
       <button class="wide turn" id="toBottomBtn" title="Send what you are holding to the bottom, under everything else" aria-label="Send to the bottom" disabled>
         <svg viewBox="0 0 24 24"><path d="M5.2 20.2h13.6"/><path d="M12 3.8v11.8"/><path d="M6.8 10.4l5.2 5.2 5.2-5.2"/></svg>
       </button>
@@ -127,10 +127,58 @@
         <svg viewBox="0 0 24 24"><path d="M5.2 3.8h13.6"/><path d="M12 20.2V8.4"/><path d="M6.8 13.6L12 8.4l5.2 5.2"/></svg>
       </button>
     </div>
-    <div class="grid3 binders">
+    <div class="grid3 binders" data-for="select">
       <button class="wide" id="cutBtn" title="Cut what you are holding — ⌘X" disabled>Cut</button>
       <button class="wide" id="copyBtn" title="Copy what you are holding — ⌘C" disabled>Copy</button>
       <button class="wide" id="pasteBtn" title="Paste — ⌘V" disabled>Paste</button>
+    </div>
+    <button class="wide toggle" data-toggle="filled" id="filledBtn" data-for="circle rect">
+      <span class="tick"></span><span>Filled shapes</span>
+    </button>
+    <div class="row slide" id="smoothRow" data-for="pencil" title="How far a stroke is tidied when you let go — 0 keeps it exactly as drawn">
+      <span class="mono tiny">Smooth</span>
+      <input type="range" id="smooth" min="0" max="100" step="1" value="25" aria-label="Pencil smoothing">
+      <span class="mono num" id="smoothVal">25</span>
+    </div>
+    <div id="warpControls" data-for="warp">
+      <div class="row slide">
+        <span class="mono tiny">Amount</span>
+        <input type="range" id="warpAmount" min="0" max="100" step="1" value="100" aria-label="Warp amount">
+        <span class="mono num" id="warpAmountVal">100</span>
+      </div>
+      <div class="sub-row">
+        <span class="mono tiny">Anchors</span>
+        <div class="modes" id="warpRepeat">
+          <button data-repeat="plane" title="Each anchor sits once, where it was put — a lens over the pattern">Plane</button>
+          <button data-repeat="tile" title="Each anchor sits in every square, turned with it — still a tiling">Tile</button>
+        </div>
+      </div>
+      <div class="sub-row">
+        <span class="mono tiny">Ink</span>
+        <div class="modes" id="warpInk">
+          <button data-ink="bend" title="Strokes follow the warp and keep the width they were given">Bends</button>
+          <button data-ink="swell" title="Strokes are warped as the area they cover, so a bulge thickens them too">Swells</button>
+        </div>
+      </div>
+      <p class="note" id="warpNone"></p>
+      <div id="warpAnchor" hidden>
+        <div class="row slide">
+          <span class="mono tiny">Bulge</span>
+          <input type="range" id="warpBulge" min="-100" max="100" step="1" value="50" aria-label="Bulge">
+          <span class="mono num" id="warpBulgeVal">50</span>
+        </div>
+        <div class="row slide">
+          <span class="mono tiny">Twirl</span>
+          <input type="range" id="warpTwirl" min="-100" max="100" step="1" value="0" aria-label="Twirl">
+          <span class="mono num" id="warpTwirlVal">0</span>
+        </div>
+        <div class="row slide">
+          <span class="mono tiny">Radius</span>
+          <input type="range" id="warpRadius" min="10" max="2000" step="5" value="400" aria-label="Radius">
+          <span class="mono num" id="warpRadiusVal">400</span>
+        </div>
+        <button class="wide" id="warpRemove" title="Remove the anchor in hand — Delete">Remove anchor</button>
+      </div>
     </div>
   </section>
 
@@ -209,9 +257,6 @@
       </div>
     </div>
 
-    <button class="wide toggle" data-toggle="filled" id="filledBtn">
-      <span class="tick"></span><span>Filled shapes</span>
-    </button>
   </section>
 
   <section class="panel">
@@ -224,48 +269,6 @@
     <div class="sub-row">
       <span class="mono tiny">Grid type</span>
       <div class="modes" id="diagModes"></div>
-    </div>
-  </section>
-
-  <section class="panel" id="warpPanel">
-    <div class="label"><span>Warp</span><i></i></div>
-    <div class="row slide">
-      <span class="mono tiny">Amount</span>
-      <input type="range" id="warpAmount" min="0" max="100" step="1" value="100" aria-label="Warp amount">
-      <span class="mono num" id="warpAmountVal">100</span>
-    </div>
-    <div class="sub-row">
-      <span class="mono tiny">Anchors</span>
-      <div class="modes" id="warpRepeat">
-        <button data-repeat="plane" title="Each anchor sits once, where it was put — a lens over the pattern">Plane</button>
-        <button data-repeat="tile" title="Each anchor sits in every square, turned with it — still a tiling">Tile</button>
-      </div>
-    </div>
-    <div class="sub-row">
-      <span class="mono tiny">Ink</span>
-      <div class="modes" id="warpInk">
-        <button data-ink="bend" title="Strokes follow the warp and keep the width they were given">Bends</button>
-        <button data-ink="swell" title="Strokes are warped as the area they cover, so a bulge thickens them too">Swells</button>
-      </div>
-    </div>
-    <p class="note" id="warpNone"></p>
-    <div id="warpAnchor" hidden>
-      <div class="row slide">
-        <span class="mono tiny">Bulge</span>
-        <input type="range" id="warpBulge" min="-100" max="100" step="1" value="50" aria-label="Bulge">
-        <span class="mono num" id="warpBulgeVal">50</span>
-      </div>
-      <div class="row slide">
-        <span class="mono tiny">Twirl</span>
-        <input type="range" id="warpTwirl" min="-100" max="100" step="1" value="0" aria-label="Twirl">
-        <span class="mono num" id="warpTwirlVal">0</span>
-      </div>
-      <div class="row slide">
-        <span class="mono tiny">Radius</span>
-        <input type="range" id="warpRadius" min="10" max="2000" step="5" value="400" aria-label="Radius">
-        <span class="mono num" id="warpRadiusVal">400</span>
-      </div>
-      <button class="wide" id="warpRemove" title="Remove the anchor in hand — Delete">Remove anchor</button>
     </div>
   </section>
 
