@@ -1818,11 +1818,13 @@
     return list.filter((sh) => !set.has(sh)).concat(members);
   }
 
+  // Moved, then brought home — with how far home was, since the square
+  // their selection is shown in has to follow them (`followHome`).
   function moveGroup(shapes, dx, dy) {
-    let moved = shapes.map((sh) => translateShape(sh, dx, dy));
-    const [hx, hy] = homeShift(moved);
-    if (hx || hy) moved = moved.map((sh) => translateShape(sh, hx, hy));
-    return moved;
+    let marks = shapes.map((sh) => translateShape(sh, dx, dy));
+    const [hx, hy] = homeShift(marks);
+    if (hx || hy) marks = marks.map((sh) => translateShape(sh, hx, hy));
+    return { marks, hx, hy };
   }
 
   function moveGrip(w) {
@@ -1874,6 +1876,7 @@
     const swap = new Map(members.map((sh, i) => [sh, next[i]]));
     replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), next));
     select(picked.map((sh) => swap.get(sh) || sh));
+    followHome(next, hx, hy);
     setHint(HINTS[state.tool] || HINTS.base);
   }
 
@@ -1915,7 +1918,9 @@
       }
       moving.dx = dx;
       moving.dy = dy;
-      moving.previews = dx || dy ? moveGroup(moving.members, dx, dy) : moving.members;
+      const g = dx || dy ? moveGroup(moving.members, dx, dy) : { marks: moving.members, hx: 0, hy: 0 };
+      moving.previews = g.marks;
+      moving.home = [g.hx, g.hy];
       requestDraw();
       return;
     }
@@ -2065,6 +2070,7 @@
         const swap = new Map(m.members.map((sh, k) => [sh, m.previews[k]]));
         replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), m.previews));
         select(picked.map((sh) => swap.get(sh) || sh));
+        if (m.home) followHome(m.previews, m.home[0], m.home[1]);
       }
       requestDraw();
       return;
@@ -2176,13 +2182,38 @@
     return null;
   };
 
+  /* Bringing marks home moves them a whole block. That looks the same
+     everywhere on the plane but in the one square their selection is
+     shown in: there they have just gone a block away, and the box and
+     grips went with them — off the copy in hand and onto one a block
+     along. So that square moves the same distance the other way, onto a
+     square turned just like it that is showing the copy the hand is on.
+     A drag brings its marks home as it goes, so while one is under way
+     the square follows it here, and it is written down on letting go. */
+  function squareShifted(at, hx, hy) {
+    if (!hx && !hy) return at;
+    const o = placeIn({ x: 0, y: 0 }, at.i, at.j);
+    const p = placeIn({ x: hx, y: hy }, at.i, at.j);
+    return { i: at.i - Math.round((p.x - o.x) / T), j: at.j - Math.round((p.y - o.y) / T) };
+  }
+
+  function followHome(marks, hx, hy) {
+    if (!hx && !hy) return;
+    for (const k of new Set(marks.map(unitKey))) {
+      const at = pickedAt.get(k);
+      if (at) pickedAt.set(k, squareShifted(at, hx, hy));
+    }
+  }
+
+  const movingFrame = (at) => (moving && moving.home ? squareShifted(at, ...moving.home) : at);
+
   // The square a mark is being shown in.
-  const unitFrame = (sh) => pickedAt.get(unitKey(sh)) || frameTile();
+  const unitFrame = (sh) => movingFrame(pickedAt.get(unitKey(sh)) || frameTile());
 
   // The selection's home: where the first thing picked up still sits. The
   // grips work on the marks themselves, which are one tile's worth however
   // many squares their copies are being shown in, so they are drawn here.
-  const heldFrame = () => firstAt() || frameTile();
+  const heldFrame = () => movingFrame(firstAt() || frameTile());
 
   function syncEditButtons() {
     const g = document.getElementById('groupBtn');
@@ -2251,6 +2282,7 @@
     const swap = new Map(marks.map((sh, k) => [sh, turned[k]]));
     replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), turned));
     select(picked.map((sh) => swap.get(sh) || sh));
+    followHome(turned, hx, hy);
     flash(`Turned 45° ${eighths > 0 ? 'clockwise' : 'anticlockwise'}`);
   }
 
@@ -2269,6 +2301,7 @@
     const swap = new Map(marks.map((sh, k) => [sh, flipped[k]]));
     replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), flipped));
     select(picked.map((sh) => swap.get(sh) || sh));
+    followHome(flipped, hx, hy);
     flash(axis === 'x' ? 'Flipped left to right' : 'Flipped top to bottom');
   }
 
@@ -2413,7 +2446,7 @@
     if (!marks || !marks.length) return flash('Nothing to paste');
     pasteRun++;
     const step = (snapping() ? T / effSub() : 40) * pasteRun;
-    const fresh = moveGroup(reseat(marks), step, step);
+    const fresh = moveGroup(reseat(marks), step, step).marks;
     setTool('select');
     replaceShapes(raise(state.shapes.concat(fresh), fresh));
     select(fresh);
@@ -3216,10 +3249,11 @@
       if (d) {
         e.preventDefault();
         const members = heldMarks();
-        const moved = moveGroup(members, d[0] * step, d[1] * step);
+        const { marks: moved, hx, hy } = moveGroup(members, d[0] * step, d[1] * step);
         const swap = new Map(members.map((sh, k) => [sh, moved[k]]));
         replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), moved));
         select(picked.map((sh) => swap.get(sh) || sh));
+        followHome(moved, hx, hy);
         return;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
