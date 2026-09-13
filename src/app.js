@@ -2625,7 +2625,7 @@
   function pasteMarks(marks) {
     if (!marks || !marks.length) return flash('Nothing to paste');
     pasteRun++;
-    const step = (snapping() ? T / effSub() : 40) * pasteRun;
+    const step = pasteStep() * pasteRun;
     const fresh = moveGroup(reseat(marks), step, step).marks;
     setTool('select');
     replaceShapes(raise(state.shapes.concat(fresh), fresh));
@@ -2651,6 +2651,10 @@
   document.addEventListener('paste', (e) => {
     if (inField(e.target)) return;
     e.preventDefault();
+    // The browser did raise it for ⌘V, so the key need not paste for it —
+    // or it came too late, after the key already had.
+    if (pasteWait) { clearTimeout(pasteWait); pasteWait = 0; }
+    else if (performance.now() - pastedByKeyAt < 1500) return;
     const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
     pasteMarks(marksFromText(text) || clipboard);
   });
@@ -2661,6 +2665,44 @@
     if (text && navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).catch(() => {});
     }
+  }
+
+  /* How far a paste or a duplicate steps from what it copied: a cell of
+     the lattice while snapping to one — and with no lattice showing there
+     is no cell, so the ordinary step, rather than a whole tile over a cell
+     of nothing. */
+  const pasteStep = () => (snapping() && state.sub ? T / effSub() : 40);
+
+  /* ⌘V is left to the browser, whose paste event hands the clipboard over
+     without asking. Where none comes — a page with nothing editable on it,
+     in some browsers — the clipboard is asked for outright, which may ask
+     the user first, and failing that the last copy made here is pasted. */
+  let pasteWait = 0;
+  let pastedByKeyAt = -Infinity;
+
+  function pasteByKey() {
+    clearTimeout(pasteWait);
+    pasteWait = setTimeout(() => {
+      pasteWait = 0;
+      pastedByKeyAt = performance.now();
+      const read = navigator.clipboard && navigator.clipboard.readText
+        ? navigator.clipboard.readText()
+        : Promise.reject(new Error('no clipboard to read'));
+      read.then((text) => pasteMarks(marksFromText(text) || clipboard), () => pasteMarks(clipboard));
+    }, 80);
+  }
+
+  /* A copy of what is held, a step along and held in its place — without
+     going near the clipboard, so whatever was copied last is still there
+     to paste. Duplicating again copies the copy, a step further on. */
+  function duplicateHeld() {
+    const marks = heldMarks();
+    if (!marks.length) return flash('Nothing in hand to duplicate');
+    const step = pasteStep();
+    const fresh = moveGroup(reseat(marks), step, step).marks;
+    replaceShapes(raise(state.shapes.concat(fresh), fresh));
+    select(fresh);
+    flash(`${fresh.length} ${fresh.length === 1 ? 'mark' : 'marks'} duplicated`);
   }
 
   /* Topmost mark under the point. Outlines are tested first so a line
@@ -3488,6 +3530,18 @@
       const n = picked.length;
       return flash(`${n} ${n === 1 ? 'mark' : 'marks'} picked up`);
     }
+    /* Copy and cut are taken here rather than left to the browser: with
+       nothing selected on the page, some browsers never raise a copy event
+       for the keys at all. Holding nothing, the keys are the browser's. */
+    if (meta && (k === 'c' || k === 'x') && !e.shiftKey && !e.altKey) {
+      if (!heldMarks().length) return;
+      e.preventDefault();
+      copyToSystem(copyHeld(k === 'x'));
+      return;
+    }
+    if (meta && k === 'v' && !e.shiftKey && !e.altKey) { pasteByKey(); return; }
+    // ⌘D would otherwise bookmark the page.
+    if (meta && k === 'd' && !e.shiftKey && !e.altKey) { e.preventDefault(); duplicateHeld(); return; }
     if (meta) return;
 
     if (state.tool === 'warp' && state.warp.anchors[warpSel]
@@ -3499,7 +3553,8 @@
 
     if (picked.length && !draft && !pending) {
       const far = e.altKey || e.ctrlKey ? 5 : 1;
-      const step = (snapping() ? T / effSub() : 10) * far;
+      // A lattice cell while snapping to one; with the grid off there is none.
+      const step = (snapping() && state.sub ? T / effSub() : 10) * far;
       const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
       if (d) {
         e.preventDefault();

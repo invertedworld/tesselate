@@ -134,6 +134,19 @@ pasted fill goes on naming the borders it arrived with. Each paste steps a
 little further from the last so they do not stack, and lands held by the select
 tool, ready to be dragged into place.
 
+**Duplicate** `⌘D` is a copy and a paste in one, without the clipboard: a copy
+of what you are holding lands a step along and is held in its place, and
+whatever you copied last is still there to paste. Press it again and the copy
+is copied, a step further on.
+
+The keys are taken by the table itself rather than left to the browser, which
+in some browsers raises no copy or paste at all while nothing on the page is
+selected. A paste still comes through the browser where it can, since that
+hands over the clipboard without asking; where it cannot, the clipboard is asked
+for outright, and failing that the last copy made in the table is pasted. With
+snapping on, a paste or a duplicate steps a cell of the lattice — or the
+ordinary step while the grid is off.
+
 **Group** `G` binds what you are holding into one thing that moves, recolours
 and goes as a unit; **Ungroup** `U` lets it loose. A fill made against
 several marks is grouped with them already — this is the same binding, by hand.
@@ -265,7 +278,7 @@ Exported SVG carries a `<linearGradient>` def per sweep, in the tile's own
 coordinates, so one def serves every copy the sheet instances.
 
 Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
-undo/redo `⌘Z` / `⇧⌘Z` · cut/copy/paste `⌘X` `⌘C` `⌘V` ·
+undo/redo `⌘Z` / `⇧⌘Z` · cut/copy/paste `⌘X` `⌘C` `⌘V` · duplicate `⌘D` ·
 select all `⌘A` · group `G` / ungroup `U` (or `⌘G` / `⇧⌘G`) · eyedropper `I` ·
 recentre `H` ·
 show tiles `T` · snapping `S` · grid size `D`
