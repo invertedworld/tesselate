@@ -3767,7 +3767,8 @@
     rememberSoon();
     if (!inkOnly && picked.length) {
       const swap = new Map();
-      for (const sh of picked) if (sh.color !== hex) swap.set(sh, Object.assign({}, sh, { color: hex }));
+      // Every mark held, not only the ones clicked: a group is held whole.
+      for (const sh of heldMarks()) if (sh.color !== hex) swap.set(sh, Object.assign({}, sh, { color: hex }));
       if (swap.size) {
         replaceShapes(state.shapes.map((sh) => swap.get(sh) || sh), sliderRun);
         select(picked.map((sh) => swap.get(sh) || sh));
