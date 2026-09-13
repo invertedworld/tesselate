@@ -1131,24 +1131,14 @@
       hctx.globalCompositeOperation = cut ? 'destination-out' : 'source-over';
       for (const { at, ops } of inks) {
         inTileFrame(() => {
+          // An area grown by a disc is the area and its edge stroked round.
           for (const op of ops) {
-            if (op.fill) {
-              hctx.fill(op.fill, op.rule);
-              if (cut) continue;
-              hctx.lineWidth = reach;
-              hctx.lineJoin = 'round';
-              hctx.stroke(op.fill);
-            } else if (cut) {
-              hctx.lineWidth = op.width;
-              hctx.lineCap = op.cap;
-              hctx.lineJoin = op.join;
-              hctx.stroke(op.line);
-            } else {
-              hctx.lineWidth = op.width + reach;
-              hctx.lineCap = 'round';
-              hctx.lineJoin = 'round';
-              hctx.stroke(op.line);
-            }
+            hctx.fill(op.fill, op.rule);
+            if (cut) continue;
+            hctx.lineWidth = reach;
+            hctx.lineCap = 'round';
+            hctx.lineJoin = 'round';
+            hctx.stroke(op.fill);
           }
         }, at, hctx);
       }
@@ -1170,8 +1160,36 @@
     ctx.restore();
   }
 
+  /* A stroke as the area its ink covers — flat ends flat, mitred corners
+     mitred — built by warp.js's outliner and kept against the mark, or
+     against its warped copy, for as long as the zoom step lasts.
+
+     The ring used to grow a stroke by stroking it wider with round ends.
+     A flat-ended stroke has no round end, so the grown ink had a cap the
+     stroke did not, cutting the stroke back out left that cap behind, and
+     every flat end of a thick stroke wore a grey blob as wide as the
+     stroke itself. Grown from the area, the ring is as wide round a flat
+     end as anywhere else. */
+  const strokeAreas = new WeakMap();
+
+  function strokeArea(s, bent, width, cap, join) {
+    const owner = bent || s;
+    const key = `${width}|${paintWarp.tol}`;
+    const had = strokeAreas.get(owner);
+    if (had && had.key === key) return had.path;
+    const lines = bent ? bent.lines : layRuns(warpRuns(s), (p) => p, paintWarp.tol, Infinity);
+    const path = new Path2D();
+    for (const poly of strokeOutline(lines, width / 2, cap, join)) {
+      path.moveTo(poly[0].x, poly[0].y);
+      for (let k = 1; k < poly.length; k++) path.lineTo(poly[k].x, poly[k].y);
+      path.closePath();
+    }
+    strokeAreas.set(owner, { key, path });
+    return path;
+  }
+
   /* The ink one mark lays down in square `at`, as the plane paints it —
-     warped or not — as areas to fill and lines to stroke. */
+     warped or not — as areas to fill. */
   function inkOf(s, at, hair) {
     const n = state.pattern.n;
     tileKey = `${mod(at.i, n)},${mod(at.j, n)}`;
@@ -1191,7 +1209,7 @@
     }
     const [cap, join] = capsOf(s.kind);
     const width = Math.max(s.width, hair);
-    ops.push({ line: bent ? bentPath(bent) : pathOf(s), width, cap, join });
+    ops.push({ fill: strokeArea(s, bent, width, cap, join), rule: 'nonzero' });
     if (bent) {
       if (bent.discs.length) ops.push({ fill: bentPath(bent, 'discs'), rule: 'nonzero' });
     } else if (ROUNDABLE[s.kind]) {
