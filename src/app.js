@@ -2512,9 +2512,18 @@
        holding an interior answered for every click inside itself — and a
        line drawn across such a mark could not be got at, whatever you
        did. Now the border wins wherever it is. */
-    const passes = o.strokesOnly ? ['edge', 'interior']
+    const passes = o.fillsOnly ? ['fill']
+      : o.strokesOnly ? ['edge', 'interior']
       : o.interior ? ['edge', 'interior', 'fill', 'inside']
       : ['edge', 'interior', 'fill'];
+    /* Fills answer in the order they are painted, so the one found is the
+       one that can be seen. A fill in no group is the ground and paints
+       under every figure wherever it sits in the list — and asked in list
+       order, a ground laid after a figure answered for a click in the
+       middle of the figure. */
+    const fills = passes.includes('fill')
+      ? paintOrder(state.shapes).filter((s) => s.layer === 'fill')
+      : null;
 
     /* Where to look. This square first; then, with `anyTile`, outward
        from it — because a mark may run past its own square and, with
@@ -2546,7 +2555,7 @@
 
     for (const pass of passes) {
       for (const spot of spots) {
-        const hit = hitPass(spot.q, o, pass);
+        const hit = hitPass(spot.q, o, pass, fills);
         // Which square's copy of it was under the pointer, so a click can
         // light up the one that was clicked rather than one of its twins.
         if (hit) { hitTile = { i: spot.i, j: spot.j }; return hit; }
@@ -2555,13 +2564,14 @@
     return null;
   }
 
-  function hitPass(p, o, pass) {
+  function hitPass(p, o, pass, fills) {
     const tol = Math.max(7 / state.view.scale, 2);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     let hit = null;
-    for (let k = state.shapes.length - 1; k >= 0; k--) {
-      const s = state.shapes[k];
+    const list = pass === 'fill' && fills ? fills : state.shapes;
+    for (let k = list.length - 1; k >= 0; k--) {
+      const s = list[k];
       const path = pathOf(s);
       if (pass === 'edge') {
         if (s.layer !== 'stroke') continue;
@@ -2869,6 +2879,19 @@
       }
       mask = dilate(filled || raw, R, R, grow, false);
       break;
+    }
+
+    /* The ground, from a click inside a fill. Nothing holds that fill in
+       any more — its border has been moved or sized away from it — so the
+       flood ran straight out to the whole square. Colouring the paper
+       behind a figure clicked in its middle is never what was meant, so
+       the fill under the pointer takes the ink instead. A fill that covers
+       the square is the ground itself, and refilling that goes on below
+       exactly as before. */
+    if (isGround) {
+      const under = hitTest(w, { fillsOnly: true, anyTile: true });
+      const b = under && under.loops && loopsBBox(under.loops);
+      if (b && (b.x1 - b.x0 < T - 16 || b.y1 - b.y0 < T - 16)) return recolour(under);
     }
 
     const cells = loopsFromMask(mask, R, R, 1);
