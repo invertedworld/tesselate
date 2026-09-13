@@ -2636,6 +2636,40 @@
     flash('Mark recoloured');
   }
 
+  // Every mark bound up with this one takes the ink: fills, borders, and
+  // the inside of any mark that carries one.
+  function recolourFigure(shape) {
+    const members = new Set(groupOf(shape));
+    const has = (sh) => sh.color === state.color && (!sh.fillColor || sh.fillColor === state.color);
+    if ([...members].every(has)) return flash('Already that ink');
+    const swap = new Map();
+    const next = state.shapes.map((sh) => {
+      if (!members.has(sh)) return sh;
+      const copy = Object.assign({}, sh, { color: state.color });
+      if (sh.fillColor) copy.fillColor = state.color;
+      swap.set(sh, copy);
+      return copy;
+    });
+    replaceShapes(next);
+    select(picked.map((sh) => swap.get(sh) || sh));
+    flash(members.size > 1 ? `${members.size} marks recoloured` : 'Mark recoloured');
+  }
+
+  // The paper a region covers, by its largest ring — enough to tell an
+  // area from a part cut out of it, and the same in any square's frame.
+  function ringArea(loops) {
+    let most = 0;
+    for (const l of loops) {
+      let a = 0;
+      for (let i = 0, n = l.length; i < n; i++) {
+        const p = l[i], q = l[(i + 1) % n];
+        a += p.x * q.y - q.x * p.y;
+      }
+      most = Math.max(most, Math.abs(a / 2));
+    }
+    return most;
+  }
+
   /* If a flooded area turns out to be exactly the inside of one closed
      mark, it belongs to that mark rather than being a separate polygon
      slid underneath it. */
@@ -2881,19 +2915,6 @@
       break;
     }
 
-    /* The ground, from a click inside a fill. Nothing holds that fill in
-       any more — its border has been moved or sized away from it — so the
-       flood ran straight out to the whole square. Colouring the paper
-       behind a figure clicked in its middle is never what was meant, so
-       the fill under the pointer takes the ink instead. A fill that covers
-       the square is the ground itself, and refilling that goes on below
-       exactly as before. */
-    if (isGround) {
-      const under = hitTest(w, { fillsOnly: true, anyTile: true });
-      const b = under && under.loops && loopsBBox(under.loops);
-      if (b && (b.x1 - b.x0 < T - 16 || b.y1 - b.y0 < T - 16)) return recolour(under);
-    }
-
     const cells = loopsFromMask(mask, R, R, 1);
     if (!cells) return flash('No open area under the cursor');
     // Cell coordinates back into the square's own, wherever the grid sat.
@@ -2930,9 +2951,28 @@
     if (!near.length) return flash('No open area under the cursor');
     const region = { kind: 'region', loops: near };
 
+    /* Clicked inside a figure that is filled already: the figure takes the
+       ink whole — every fill in it and every border bound up with it. Left
+       to the rest of this, an area still held in got another polygon
+       stacked on the ones before, so a star came to hold four fills in
+       four colours round an outline still in the first; and one whose
+       border had been sized away from it flooded out and coloured the
+       paper behind instead.
+
+       The fill is found by what is under the pointer, so a copy run over
+       from a neighbour answers as well, and compared by area rather than
+       by box, which that copy's own quarter-turn would have turned. An
+       area much smaller than the fill is a part cut out of it by a newer
+       line, and is filled on top as a new area, as it always was. */
+    const under = hitTest(w, { fillsOnly: true, anyTile: true });
+    if (under && under.loops && ringArea(region.loops) >= 0.9 * ringArea(under.loops)) {
+      return recolourFigure(under);
+    }
+
     const host = interiorHost(w, region);
     if (host) {
-      if (host.fillColor === state.color) return flash('Already that ink');
+      // An inside it has already is the figure being recoloured.
+      if (host.fillColor) return recolourFigure(host);
       const next = Object.assign({}, host, { fillColor: state.color });
       replaceShapes(state.shapes.map((sh) => (sh === host ? next : sh)));
       select(picked.map((sh) => (sh === host ? next : sh)));

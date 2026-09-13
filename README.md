@@ -50,7 +50,7 @@ right out before letting go counts as finishing it.
 | **Arc** `A` | Two clicks for the ends — or one drag — then move to bend it and click to set. An arc owes its bend either way, so the drag sets the chord and hands it on to be bent. Hold `Alt` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
 | **Circle** `C` | Drag rim to rim, or click each end of a diameter — both points you place land on the circle. Hold `Alt` **as you start** to grow it from the centre instead: the first point is then the middle and the second sets the radius |
 | **Rect** `R` | Click a corner, then the opposite one; `Alt` for a square. On the **Iso** frame it draws a rhombus instead — a face of a cube |
-| **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. On an empty tile there is nothing holding an area in, so the whole square fills, and it comes out as the ground. Click a mark instead and it takes the current ink. So does a fill whose border has since been moved or sized away from it: with nothing left holding it in, the flood would otherwise run out and colour the paper behind it. Filling an area again recolours it in place, and an already-filled area can still be cut up by new lines and its parts filled separately |
+| **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. On an empty tile there is nothing holding an area in, so the whole square fills, and it comes out as the ground. Click a border and that border takes the current ink. Click inside a figure that is filled already and the whole figure takes it — every fill in it and every border grouped with it — even where its border has since been moved or sized away from it. The first fill of an outlined area leaves the outline its own colour, and an already-filled area can still be cut up by new lines and its parts filled separately |
 | **Erase** `E` | Click or drag across a mark to remove it. A border answers before the interior of the mark holding it, and before a fill, so a line drawn across a filled shape can still be got at — and a mark can be rubbed out by any of its ink, including the part that has run over a neighbouring square |
 
 Straight geometry is stroked with **flat ends**, so a line stops exactly on
@@ -75,10 +75,10 @@ not in it.)
 Filling an area does one of two things:
 
 - If the area is exactly the inside of one closed mark, it becomes that mark's
-  own interior — one object, with the border and the fill separately
-  recolourable by clicking either with the fill tool. It is still a fill, and
-  is painted at fill depth: an area filled *inside* that mark goes on top of
-  it, not under.
+  own interior — one object, whose border alone takes the ink when the fill
+  tool clicks the border, and which takes it whole when clicked inside. It is
+  still a fill, and is painted at fill depth: an area filled *inside* that mark
+  goes on top of it, not under.
 - If it was bounded by several marks — a triangle drawn as three lines, say —
   the fill is **grouped** with them. Picking up any member moves the whole
   group, and `Delete` removes it.
