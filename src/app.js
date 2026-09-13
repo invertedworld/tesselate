@@ -1906,7 +1906,14 @@
      whatever came in. */
   function adoptIds(list) {
     for (const sh of list) {
-      if (sh.group >= groupSeq) groupSeq = sh.group + 1;
+      /* A chain of groups is written only where there is more than one, and
+         its outermost is the group, whatever the file says. */
+      if (Array.isArray(sh.groups)) {
+        const chain = sh.groups.filter((g) => Number.isInteger(g) && g > 0);
+        if (chain.length > 1) { sh.groups = chain; sh.group = chain[0]; }
+        else { delete sh.groups; if (chain.length) sh.group = chain[0]; }
+      }
+      for (const g of groupsOf(sh)) if (g >= groupSeq) groupSeq = g + 1;
       if (sh.id == null) sh.id = shapeSeq++;
       else if (sh.id >= shapeSeq) shapeSeq = sh.id + 1;
     }
@@ -1969,18 +1976,23 @@
            just clicked lights up and the ones already in hand stay where
            they were. */
         if (add) {
-          const unit = new Set(groupOf(hit));
+          const level = levelFor(hit);
+          const unit = new Set(unitOf(hit, level).members);
           const had = picked.some((sh) => unit.has(sh));
           const next = had ? picked.filter((sh) => !unit.has(sh)) : picked.concat([hit]);
-          select(next, home);
+          select(next, home, new Map([[hit.id, level]]));
           requestDraw();
           return true;     // a pick, not the start of a move
         }
-        // Pressing on something already held moves the whole armful.
-        if (!heldMarks().includes(hit)) select([hit], home);
+        /* Pressing on something already held moves the whole armful, and a
+           press that comes up without moving goes a group further in — see
+           endDraw. Anything else is picked up as far into its groups as the
+           hand has already gone around it. */
+        const held = heldMarks().includes(hit);
+        if (!held) select([hit], home, levelFor(hit));
         requestDraw();
         const members = heldMarks();
-        moving = { members, previews: members, base: hit, from, dx: 0, dy: 0 };
+        moving = { members, previews: members, base: hit, from, dx: 0, dy: 0, inward: held ? hit : null };
         return true;
       }
       case 'pencil':
@@ -2338,6 +2350,8 @@
         replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), m.previews));
         select(picked.map((sh) => swap.get(sh) || sh));
         if (m.home) followHome(m.previews, m.home[0], m.home[1]);
+      } else if (m.inward && !dragged) {
+        goInto(m.inward);
       }
       requestDraw();
       return;
@@ -2405,14 +2419,109 @@
     ? state.shapes.filter((s) => s.group === shape.group)
     : shape ? [shape] : []);
 
+  /* Groups nest. A mark carries the chain of groups it sits in, outermost
+     first: `group` is the outermost, as it always was, and `groups` the
+     whole chain wherever there is more than one. Grouping a group with
+     something else puts it inside the new group whole rather than melting
+     it in, and ungrouping takes off one level. */
+  function groupsOf(sh) {
+    return sh.groups && sh.groups.length ? sh.groups : sh.group ? [sh.group] : [];
+  }
+
+  // A copy of a mark in this chain of groups, written the short way.
+  function withGroups(sh, chain) {
+    const out = Object.assign({}, sh);
+    delete out.groups;
+    delete out.group;
+    if (chain.length) out.group = chain[0];
+    if (chain.length > 1) out.groups = chain;
+    return out;
+  }
+
+  /* What is held, unit by unit. A mark is picked up at a depth among its
+     groups: at 0 it holds the whole of its outermost group, at 1 the group
+     inside that, and so on, and past its last group it holds itself — which
+     is how a click on something held goes a group further in. A unit that
+     sits inside another unit held is part of that one, not a unit too. */
+  let pickDepth = new Map();     // mark id -> how far into its groups it was picked
+  let heldMemo = null;
+
+  function unitOf(sh, depth) {
+    const chain = groupsOf(sh);
+    const d = Math.min(depth == null ? pickDepth.get(sh.id) || 0 : depth, chain.length);
+    if (d === chain.length) return { key: `i${sh.id}`, group: null, depth: d, chain, members: [sh] };
+    const id = chain[d];
+    return {
+      key: `g${id}`, group: id, depth: d, chain,
+      members: state.shapes.filter((s) => groupsOf(s)[d] === id),
+    };
+  }
+
+  function heldUnits() {
+    if (heldMemo && heldMemo.picked === picked && heldMemo.shapes === state.shapes
+        && heldMemo.depths === pickDepth) return heldMemo.units;
+    const found = new Map();
+    for (const sh of picked) {
+      const u = unitOf(sh);
+      if (!found.has(u.key)) found.set(u.key, u);
+    }
+    // Where a unit sits: its chain down to itself.
+    const reach = (u) => (u.group == null ? u.chain.concat([`i${u.members[0].id}`]) : u.chain.slice(0, u.depth + 1));
+    const all = [...found.values()];
+    const units = all.filter((u) => {
+      const e = reach(u);
+      return !all.some((v) => {
+        const f = reach(v);
+        return v !== u && f.length < e.length && f.every((id, k) => e[k] === id);
+      });
+    });
+    const byId = new Map();
+    const marks = [];
+    for (const u of units) {
+      for (const m of u.members) {
+        if (byId.has(m.id)) continue;
+        byId.set(m.id, u.key);
+        marks.push(m);
+      }
+    }
+    heldMemo = { picked, shapes: state.shapes, depths: pickDepth, units, byId, marks };
+    return units;
+  }
+
   /* Holding one member of a group holds the group: what is outlined is
      what will move, recolour or go. */
   function heldMarks() {
-    const out = [], seen = new Set();
-    for (const sh of picked) {
-      for (const m of groupOf(sh)) if (!seen.has(m)) { seen.add(m); out.push(m); }
+    heldUnits();
+    return heldMemo.marks.slice();
+  }
+
+  /* How far into its groups a mark is picked up: as far as the hand has
+     already gone into the groups around it. Holding something inside a
+     group, a click on another member of that group holds that member, not
+     the whole group over again. */
+  function levelFor(hit) {
+    const chain = groupsOf(hit);
+    let level = 0;
+    for (const u of heldUnits()) {
+      let k = 0;
+      while (k < u.depth && k < chain.length && u.chain[k] === chain[k]) k++;
+      if (k > level) level = k;
     }
-    return out;
+    return level;
+  }
+
+  /* A click on something already held goes one group further in: to the
+     group inside it that the pointer is over, or, with no group left, to
+     the mark itself. */
+  function goInto(hit) {
+    const u = heldUnits().find((unit) => unit.members.includes(hit));
+    if (!u || u.group == null) return;
+    select([hit], pickedAt.get(u.key), u.depth + 1);
+    const inner = heldUnits()[0];
+    flash(inner && inner.group != null
+      ? `Inside the group — ${inner.members.length} marks held`
+      : 'Inside the group — one mark held');
+    requestDraw();
   }
 
   /* A selection belongs to the square it was taken in, and stays there.
@@ -2427,20 +2536,32 @@
      unit's id rather than the object, since every edit hands back fresh
      objects and the squares have to survive that. */
   let pickedAt = new Map();
-  const unitKey = (sh) => (sh.group ? `g${sh.group}` : `i${sh.id}`);
+  // The unit a held mark is held as — found by id, so the moving copies of
+  // a mark part way through a drag answer to it as well.
+  const unitKey = (sh) => {
+    heldUnits();
+    return heldMemo.byId.get(sh.id) || (sh.group ? `g${sh.group}` : `i${sh.id}`);
+  };
 
-  function select(list, tile) {
+  /* `depth` says how far into its groups each mark picked goes: one number
+     for them all, or a map by id. A mark held already keeps the depth it
+     had; anything else starts at its outermost group. */
+  function select(list, tile, depth) {
     // A sweep over marks already in hand should not hold them twice.
     picked = [...new Set((list || []).filter(Boolean))];
+    const depths = new Map();
+    for (const sh of picked) {
+      const d = depth instanceof Map ? depth.get(sh.id) : depth;
+      depths.set(sh.id, d != null ? d : pickDepth.get(sh.id) || 0);
+    }
+    pickDepth = depths;
     if (!picked.length) { pickedAt = new Map(); syncEditButtons(); return; }
     const at = tile ? { i: tile.i, j: tile.j } : null;
     const next = new Map();
-    for (const sh of heldMarks()) {
-      const k = unitKey(sh);
-      if (next.has(k)) continue;
+    for (const u of heldUnits()) {
       // Where it already was; failing that where this click landed;
       // failing that alongside whatever else is in hand.
-      next.set(k, pickedAt.get(k) || at || firstAt() || { ...frameTile() });
+      next.set(u.key, pickedAt.get(u.key) || at || firstAt() || { ...frameTile() });
     }
     pickedAt = next;
     syncEditButtons();
@@ -2490,9 +2611,9 @@
     if (!g || !u) return;
     const marks = heldMarks();
     // Two things to bind means two units, not two marks: a group is one.
-    const units = new Set(marks.map((sh) => sh.group || sh));
-    g.disabled = units.size < 2;
-    u.disabled = !marks.some((sh) => sh.group);
+    const units = heldUnits();
+    g.disabled = units.length < 2;
+    u.disabled = !units.some((unit) => unit.group != null);
     for (const id of ['turnLeftBtn', 'turnRightBtn', 'flipXBtn', 'flipYBtn']) {
       document.getElementById(id).disabled = !marks.length;
     }
@@ -2513,21 +2634,32 @@
      thing; a fill made against several marks is grouped with them
      automatically, and these two do the same by hand. */
   function groupPicked() {
-    const marks = heldMarks();
-    const units = new Set(marks.map((sh) => sh.group || sh));
-    if (units.size < 2) return flash('Hold two things — Shift-click to add to what you have');
+    const units = heldUnits();
+    if (units.length < 2) return flash('Hold two things — Shift-click to add to what you have');
+    /* The new group goes where the things held sit together: inside every
+       group they share, and round each of them whole. A unit held from
+       deeper in comes out of the groups in between, so no group is left
+       half inside the new one and half out of it. */
+    let common = units[0].chain.slice(0, units[0].depth);
+    for (const u of units) {
+      let k = 0;
+      while (k < common.length && k < u.depth && common[k] === u.chain[k]) k++;
+      common = common.slice(0, k);
+    }
     const gid = groupSeq++;
-    const set = new Set(marks);
+    const below = new Map();     // mark -> the chain it keeps inside the new group
+    for (const u of units) for (const m of u.members) below.set(m, groupsOf(m).slice(u.depth));
     const swap = new Map();
     const next = state.shapes.map((sh) => {
-      if (!set.has(sh)) return sh;
-      const copy = Object.assign({}, sh, { group: gid });
+      if (!below.has(sh)) return sh;
+      const copy = withGroups(sh, common.concat([gid], below.get(sh)));
       swap.set(sh, copy);
       return copy;
     });
     replaceShapes(next);
-    select(picked.map((sh) => swap.get(sh) || sh));
-    flash(`${marks.length} marks grouped`);
+    // What is held now is the new group.
+    select(picked.map((sh) => swap.get(sh) || sh), null, common.length);
+    flash(`${below.size} marks grouped`);
   }
 
   /* Turning what is in hand. Several marks turn about the centre of what
@@ -2627,21 +2759,23 @@
     flash(RESTACKED[how]);
   }
 
+  // One level off: the group held comes undone, and whatever was inside it
+  // — marks, or groups of their own — is left as it was.
   function ungroupPicked() {
-    const marks = heldMarks().filter((sh) => sh.group);
-    if (!marks.length) return flash('Nothing grouped in what you are holding');
-    const set = new Set(marks);
+    const units = heldUnits().filter((u) => u.group != null);
+    if (!units.length) return flash('Nothing grouped in what you are holding');
+    const undone = new Map();    // mark -> the group taken off it
+    for (const u of units) for (const m of u.members) undone.set(m, u.group);
     const swap = new Map();
     const next = state.shapes.map((sh) => {
-      if (!set.has(sh)) return sh;
-      const copy = Object.assign({}, sh);
-      delete copy.group;
+      if (!undone.has(sh)) return sh;
+      const copy = withGroups(sh, groupsOf(sh).filter((id) => id !== undone.get(sh)));
       swap.set(sh, copy);
       return copy;
     });
     replaceShapes(next);
     select(picked.map((sh) => swap.get(sh) || sh));
-    flash(`${marks.length} marks let loose`);
+    flash(`${undone.size} marks let loose`);
   }
 
   /* ---------------- cut, copy, paste ----------------
@@ -2676,17 +2810,22 @@
   /* Fresh ids all round. A pasted group stays a group without joining a
      group already on the tile, and a pasted fill goes on naming the
      borders it came with rather than whichever marks hold those ids now. */
-  function reseat(marks) {
+  /* `keep` says how many of a mark's outer groups its copy stays in — a
+     duplicate made inside a group stays inside it — and every group below
+     those is made afresh for the copies. */
+  function reseat(marks, keep) {
     const ids = new Map();
     const groups = new Map();
     const out = marks.map((sh) => {
-      const copy = Object.assign({}, sh);
+      const k = keep ? keep(sh) : 0;
+      const chain = groupsOf(sh).map((g, i) => {
+        if (i < k) return g;
+        if (!groups.has(g)) groups.set(g, groupSeq++);
+        return groups.get(g);
+      });
+      const copy = withGroups(sh, chain);
       ids.set(sh.id, shapeSeq);
       copy.id = shapeSeq++;
-      if (sh.group) {
-        if (!groups.has(sh.group)) groups.set(sh.group, groupSeq++);
-        copy.group = groups.get(sh.group);
-      }
       return copy;
     });
     for (const sh of out) {
@@ -2800,9 +2939,13 @@
     const w = placeIn(c, f.i, f.j);
     const s = w2s(w.x, w.y);
     const to = unplaceIn(toWorld(s.x + DUP_PX, s.y + DUP_PX), f.i, f.j);
-    const { marks: fresh, hx, hy } = moveGroup(reseat(marks), to.x - c.x, to.y - c.y);
+    // Made inside a group, the copy stays in it, held as far in.
+    const depthOf = new Map();
+    for (const u of heldUnits()) for (const m of u.members) depthOf.set(m.id, u.depth);
+    const copies = reseat(marks, (sh) => depthOf.get(sh.id) || 0);
+    const { marks: fresh, hx, hy } = moveGroup(copies, to.x - c.x, to.y - c.y);
     replaceShapes(raise(state.shapes.concat(fresh), fresh));
-    select(fresh);
+    select(fresh, null, new Map(fresh.map((sh, k) => [sh.id, depthOf.get(marks[k].id) || 0])));
     // Brought home a block, the copy takes its selection with it.
     followHome(fresh, hx, hy);
     flash(`${fresh.length} ${fresh.length === 1 ? 'mark' : 'marks'} duplicated`);
@@ -3628,7 +3771,7 @@
       cancelDraft();
       if (!state.shapes.length) return flash('Nothing on the tile');
       setTool('select');
-      select(state.shapes.slice());
+      select(state.shapes.slice(), null, 0);
       requestDraw();
       const n = picked.length;
       return flash(`${n} ${n === 1 ? 'mark' : 'marks'} picked up`);

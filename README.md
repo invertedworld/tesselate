@@ -155,6 +155,20 @@ several marks is grouped with them already — this is the same binding, by hand
 The two buttons under the tools say when they apply: Group wants two separate
 things in hand, Ungroup wants something bound.
 
+**Groups nest.** Group a group with something else and it goes inside the new
+group whole rather than melting into it; Ungroup takes off one level and leaves
+whatever was inside as it was. A click holds the outermost group, and a **click
+again** on something held goes one group further in: to the group inside that
+the pointer is over, and at last to the mark itself. Gone inside a group, a
+click on another member of it holds that member rather than the whole group
+over again; a click on anything outside it starts from the top. A drag always
+moves what is held, so it is a click, not a press, that goes further in.
+
+Whatever is held, however far in, is what the palette recolours — every mark of
+it — what the arrows nudge and what `Delete` removes. Grouping things held
+inside a group makes the new group inside that one, and a duplicate made there
+stays there.
+
 ### Grips
 
 What you are holding gets a grip on each corner of its box. Drag one and the
@@ -342,7 +356,9 @@ It is meant to be read. One mark per line, so a drawing diffs like source:
     }
 
 Coordinates are in tile units — the tile is `tile` across, 1000 — so a drawing
-is resolution-free and stays exact at any zoom.
+is resolution-free and stays exact at any zoom. A mark in a group carries
+`group`, the outermost group it is in; one inside a group within a group also
+carries `groups`, the whole chain, outermost first.
 
 Where the browser has the File System Access API (**Chrome and Edge only** —
 Safari and Firefox have none), the file you opened or saved is **kept**: *Save* writes straight back to it without asking
