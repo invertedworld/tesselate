@@ -135,16 +135,18 @@ little further from the last so they do not stack, and lands held by the select
 tool, ready to be dragged into place.
 
 **Duplicate** `⌘D` is a copy and a paste in one, without the clipboard: a copy
-of what you are holding lands a step along and is held in its place, and
-whatever you copied last is still there to paste. Press it again and the copy
-is copied, a step further on.
+of what you are holding lands a little to the right of it and below, and is
+held in its place, while whatever you copied last is still there to paste.
+Right and below as you see them — in a turned square, on the 45° plane and
+through a warp alike — and only a few pixels, so the copy is never lost from
+sight. Press it again and the copy is copied, a little further on.
 
 The keys are taken by the table itself rather than left to the browser, which
 in some browsers raises no copy or paste at all while nothing on the page is
 selected. A paste still comes through the browser where it can, since that
 hands over the clipboard without asking; where it cannot, the clipboard is asked
 for outright, and failing that the last copy made in the table is pasted. With
-snapping on, a paste or a duplicate steps a cell of the lattice — or the
+snapping on, a paste steps a cell of the lattice — or the
 ordinary step while the grid is off.
 
 **Group** `G` binds what you are holding into one thing that moves, recolours

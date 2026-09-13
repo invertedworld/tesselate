@@ -2667,7 +2667,7 @@
     }
   }
 
-  /* How far a paste or a duplicate steps from what it copied: a cell of
+  /* How far a paste steps from what it copied: a cell of
      the lattice while snapping to one — and with no lattice showing there
      is no cell, so the ordinary step, rather than a whole tile over a cell
      of nothing. */
@@ -2692,16 +2692,30 @@
     }, 80);
   }
 
-  /* A copy of what is held, a step along and held in its place — without
-     going near the clipboard, so whatever was copied last is still there
-     to paste. Duplicating again copies the copy, a step further on. */
+  /* A copy of what is held, a little to the right of it and below, held in
+     its place — without going near the clipboard, so whatever was copied
+     last is still there to paste. Right and below as the screen has them:
+     the step is measured there, from the middle of what is held, and taken
+     back into the drawing through the square the selection is shown in.
+     Stepped along the tile's own axes, a copy in a turned square went up or
+     left instead, and the 45° plane or a warp would each send it another
+     way again. Duplicating again copies the copy, a little further on. */
+  const DUP_PX = 16;
+
   function duplicateHeld() {
     const marks = heldMarks();
-    if (!marks.length) return flash('Nothing in hand to duplicate');
-    const step = pasteStep();
-    const fresh = moveGroup(reseat(marks), step, step).marks;
+    const box = heldBox(marks);
+    if (!box) return flash('Nothing in hand to duplicate');
+    const f = heldFrame();
+    const c = { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
+    const w = placeIn(c, f.i, f.j);
+    const s = w2s(w.x, w.y);
+    const to = unplaceIn(toWorld(s.x + DUP_PX, s.y + DUP_PX), f.i, f.j);
+    const { marks: fresh, hx, hy } = moveGroup(reseat(marks), to.x - c.x, to.y - c.y);
     replaceShapes(raise(state.shapes.concat(fresh), fresh));
     select(fresh);
+    // Brought home a block, the copy takes its selection with it.
+    followHome(fresh, hx, hy);
     flash(`${fresh.length} ${fresh.length === 1 ? 'mark' : 'marks'} duplicated`);
   }
 
