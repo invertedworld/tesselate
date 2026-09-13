@@ -116,8 +116,9 @@
      is drafted on. */
   const RULE_MINOR = 'rgba(23,22,15,0.3)';
   const RULE_MAJOR = 'rgba(23,22,15,0.46)';
-  const SUB_RULE = 'rgba(86,156,214,0.55)';   // the lattice you asked for
-  const SUB_FINE = 'rgba(86,156,214,0.26)';   // the levels it gains on zoom
+  // Dotted, so a third of the ink a solid line had: stronger to make it up.
+  const SUB_RULE = 'rgba(86,156,214,0.9)';    // the lattice you asked for
+  const SUB_FINE = 'rgba(86,156,214,0.5)';    // the levels it gains on zoom
 
   /* Below this many screen pixels apart the lattice stops being a guide
      and turns into a wash. A hairline every three pixels still reads as
@@ -855,10 +856,13 @@
      moving it carries its fill and its border together; inside a unit
      the fill still goes down first, under its own outline. Fills that
      belong to no group are the ground the rest sits on, so they stay
-     at the bottom. */
-  function paintOrder(list) {
-    const order = [];
-    for (const s of list) if (s.layer === 'fill' && !s.group) order.push(s);
+     at the bottom.
+
+     The ground and the units are handed back apart, since reordering
+     depth works on them apart too: a unit goes up or down as one thing,
+     and a fill in the ground never comes up through a mark. */
+  function paintUnits(list) {
+    const ground = list.filter((s) => s.layer === 'fill' && !s.group);
 
     /* Each shape sits in a unit — its group, or itself. A fill then pulls
        the marks that bound it into its own unit, wherever else they
@@ -885,23 +889,35 @@
       const k = key.get(s);
       if (k === undefined) return;
       let u = units.get(k);
-      if (!u) units.set(k, (u = { last: i, fills: [], strokes: [] }));
+      if (!u) units.set(k, (u = { last: i, members: [] }));
       if (i > u.last) u.last = i;
-      if (s.layer === 'fill') u.fills.push(s);
-      else {
-        /* A mark's own interior is a fill and belongs at fill depth. It
-           used to be painted with the mark's border, which paintOrder
-           puts above every separate fill — so an area filled inside a
-           closed mark vanished under that mark's interior the moment it
-           was drawn, and clicking the same spot again did nothing
-           visible however many times you tried. */
-        if (s.fillColor && !s.filled) u.fills.push({ inside: s });
-        u.strokes.push(s);
-      }
+      u.members.push(s);
     });
+    return {
+      ground,
+      units: [...units.values()].sort((a, b) => a.last - b.last).map((u) => u.members),
+    };
+  }
 
-    for (const u of [...units.values()].sort((a, b) => a.last - b.last)) {
-      order.push(...u.fills, ...u.strokes);
+  function paintOrder(list) {
+    const { ground, units } = paintUnits(list);
+    const order = ground;
+    for (const members of units) {
+      const fills = [], strokes = [];
+      for (const s of members) {
+        if (s.layer === 'fill') fills.push(s);
+        else {
+          /* A mark's own interior is a fill and belongs at fill depth. It
+             used to be painted with the mark's border, which paintOrder
+             puts above every separate fill — so an area filled inside a
+             closed mark vanished under that mark's interior the moment it
+             was drawn, and clicking the same spot again did nothing
+             visible however many times you tried. */
+          if (s.fillColor && !s.filled) fills.push({ inside: s });
+          strokes.push(s);
+        }
+      }
+      order.push(...fills, ...strokes);
     }
     return order;
   }
@@ -1027,7 +1043,90 @@
         at(sh.c.x, sh.c.y - r, (p) => ({ ...sh, r: Math.abs(p.y - sh.c.y) }), 'the radius'),
       ];
     }
+    if (sh.kind === 'path' && sh.pts.length > 1) return pathGrips(sh);
     return [];
+  }
+
+  /* A pencil stroke's grips. A stroke kept as drawn carries a point every
+     pixel or two, far too close to take hold of one at a time, so the
+     grips are spread along it by how far apart they fall on screen, and
+     a drag bends the stroke rather than one point of it: the pull is whole
+     at the grip and eases off to nothing at the grips either side. Where
+     the points are already that far apart, as a tidied stroke's often
+     are, that is simply the one point moving.
+
+     Like the bend of an arc, each grip sits on the stroke itself rather
+     than on the point steering it. The stroke is drawn as quadratics
+     through the midpoints, so it passes a quarter of the way between the
+     midpoints either side and its own point — and a drag moves the point
+     by whatever it takes to put that spot under the pointer. */
+  const PATH_GAP = 40;     // screen pixels between the grips along a stroke
+
+  /* Which points are grips depends on the zoom and on the stroke's shape,
+     and a drag changes the shape. Picked afresh each frame, every grip
+     past the one in hand would slide along the stroke as it bent, so the
+     choice rides along on the shape the drag hands back. */
+  const pathGripPicks = new WeakMap();
+
+  function pathGripIndices(sh) {
+    const had = pathGripPicks.get(sh);
+    if (had && had.scale === state.view.scale) return had.idx;
+    const pts = sh.pts, last = pts.length - 1;
+    const gap = PATH_GAP / state.view.scale;
+    const idx = [0];
+    let run = 0;
+    for (let i = 1; i < last; i++) {
+      run += dist(pts[i - 1], pts[i]);
+      if (run >= gap) { idx.push(i); run = 0; }
+    }
+    // The far end is always a grip; the one before it makes way if the
+    // two would crowd each other.
+    if (idx.length > 1 && run + dist(pts[last - 1], pts[last]) < gap / 2) idx.pop();
+    idx.push(last);
+    return idx;
+  }
+
+  function pathGrips(sh) {
+    const pts = sh.pts, last = pts.length - 1;
+    const idx = pathGripIndices(sh);
+    const len = [0];
+    for (let i = 1; i <= last; i++) len.push(len[i - 1] + dist(pts[i - 1], pts[i]));
+    const ease = (t) => (1 - Math.cos(Math.PI * t)) / 2;
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+    return idx.map((h, k) => {
+      const lo = k > 0 ? idx[k - 1] : h;
+      const hi = k < idx.length - 1 ? idx[k + 1] : h;
+      // How much of the pull a point takes, by how far along the stroke it
+      // lies between this grip and the next one out.
+      const share = (i) => {
+        if (i === h) return 1;
+        if (i <= lo || i >= hi) return 0;
+        return i < h
+          ? ease((len[i] - len[lo]) / (len[h] - len[lo] || 1))
+          : ease((len[hi] - len[i]) / (len[hi] - len[h] || 1));
+      };
+      // Where the stroke passes for this point, and how far that spot
+      // travels for each unit the point does — its neighbours moving too.
+      let at = pts[h], gain = 1;
+      if (h > 0 && h < last) {
+        const from = h === 1 ? pts[0] : mid(pts[h - 1], pts[h]);
+        const to = mid(pts[h], pts[h + 1]);
+        at = { x: (from.x + 2 * pts[h].x + to.x) / 4, y: (from.y + 2 * pts[h].y + to.y) / 4 };
+        const back = h === 1 ? share(0) : (share(h - 1) + 1) / 2;
+        gain = (back + 2 + (1 + share(h + 1)) / 2) / 4;
+      }
+      const set = (q) => {
+        const dx = (q.x - at.x) / gain, dy = (q.y - at.y) / gain;
+        const out = { ...sh, pts: pts.map((p, i) => {
+          const s = share(i);
+          return s ? { x: p.x + dx * s, y: p.y + dy * s } : p;
+        }) };
+        pathGripPicks.set(out, { scale: state.view.scale, idx });
+        return out;
+      };
+      return { x: at.x, y: at.y, set, what: h === 0 || h === last ? 'this end' : 'the stroke' };
+    });
   }
 
   // Everything the pointer could take hold of, nearest first.
@@ -1381,6 +1480,13 @@
   }
 
   function latticePass(n, skip, colour, frames) {
+    /* Dotted, so the lattice cannot be taken for the tile rules: solid,
+       the two differed only by a shade, and at most zooms the cells read
+       as squares of the plane. Butt ends, since the round ones the marks
+       are painted with would swell every dot into a dash. */
+    ctx.save();
+    ctx.setLineDash([1, 2]);
+    ctx.lineCap = 'butt';
     ctx.lineWidth = 1;
     ctx.strokeStyle = colour;
     ctx.beginPath();
@@ -1397,6 +1503,7 @@
       latticeLines(n, skip, hair);
     }
     ctx.stroke();
+    ctx.restore();
   }
 
   function latticeLines(n, skip, hair) {
@@ -1675,11 +1782,19 @@
     return w;
   }
 
-  /* The plane repeats every tile, so a mark dragged into a neighbour is
-     the same mark one period over. Bring it back to the home tile:
-     left where it lands its home square would have no record of it. */
-  // Whole-tile steps that bring a set of marks back to the home square,
-  // measured on the group as a whole so it never comes apart.
+  /* The plane repeats, so a mark dragged a long way off is the same mark
+     one period over, and it is brought back towards the home square
+     rather than left to wander — measured on the group as a whole, so it
+     never comes apart.
+
+     The period is the block, not the tile. Under anything but Translate
+     the next square along is turned, and a mark stepped one tile over
+     was drawn by that square's turn instead: the picture changed under
+     the hand the moment it was let go, and a figure across the seam came
+     apart. A whole block over, every square it lands in is turned the
+     same as the one it left, so nothing on the plane moves. Of the places
+     that leaves, the one kept is the one whose middle is nearest the
+     middle of the square — on a block of one, the square itself. */
   function homeShift(shapes) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const sh of shapes) {
@@ -1689,10 +1804,9 @@
       x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1);
     }
     if (x0 === Infinity) return [0, 0];
-    return [
-      -Math.floor((x0 + x1) / 2 / T) * T,
-      -Math.floor((y0 + y1) / 2 / T) * T,
-    ];
+    const block = state.pattern.n * T;
+    const home = (c) => -Math.round((c - T / 2) / block) * block || 0;
+    return [home((x0 + x1) / 2), home((y0 + y1) / 2)];
   }
 
   /* A mark you just moved should sit above what it was moved onto, so
@@ -1713,8 +1827,10 @@
 
   function moveGrip(w) {
     // A turn reads the angle off the raw pointer: pulling it onto the
-    // lattice first would fight the eighth it is being held to.
-    const p = grip.kind === 'turn' ? w : sp(w);
+    // lattice first would fight the eighth it is being held to. A pencil
+    // stroke's grips read it raw as well: the pencil never touches it.
+    const freehand = grip.kind === 'point' && grip.shape.kind === 'path';
+    const p = grip.kind === 'turn' || freehand ? w : sp(w);
     if (grip.kind === 'point') {
       grip.previews = [grip.set(p)];
     } else if (grip.kind === 'size') {
@@ -1781,7 +1897,16 @@
     if (moving) {
       let dx = w.x - moving.from.x;
       let dy = w.y - moving.from.y;
-      if (snapping()) {
+      /* A click is not a move. Release comes through here too, and with
+         snapping on the anchor was pulled onto the nearest target even
+         when the pointer had not moved at all — so clicking a mark to
+         pick it up shifted it, and a shift across the square's middle
+         sent the lot home a tile away. Until the press has travelled as
+         far as a drag must, nothing moves. */
+      if (Math.hypot(dx, dy) * state.view.scale < DRAG_MIN) {
+        dx = 0;
+        dy = 0;
+      } else if (snapping()) {
         // Land the mark's own anchor on a target, so dragging both
         // keeps a snapped mark snapped and pulls a stray one into line.
         const a = anchorOf(moving.base);
@@ -1949,8 +2074,11 @@
     // Freehand always ends on release. Every other mark can be drawn
     // either way: clicked out corner to corner, or dragged in one go.
     if (draft.kind === 'path') {
-      // Freehand comes in jittery; smooth it before it is kept.
-      draft.pts = smoothPath(draft.pts, 1.6 / state.view.scale);
+      /* Freehand comes in jittery; smooth it before it is kept — unless
+         Ctrl or Alt is down as it is let go, which keeps every point the
+         hand laid. Read at the release rather than the press, so it can
+         be decided with the stroke already down. */
+      if (!constrain()) draft.pts = smoothPath(draft.pts, 1.6 / state.view.scale);
       commitLive();
       return;
     }
@@ -2068,6 +2196,14 @@
     for (const id of ['turnLeftBtn', 'turnRightBtn', 'flipXBtn', 'flipYBtn']) {
       document.getElementById(id).disabled = !marks.length;
     }
+    // Up and to the top apply together, as do down and to the bottom:
+    // anything that can go to the top has something directly above it.
+    const rise = marks.length > 0 && !!restacked(marks, 'up');
+    const sink = marks.length > 0 && !!restacked(marks, 'down');
+    document.getElementById('upOneBtn').disabled = !rise;
+    document.getElementById('toTopBtn').disabled = !rise;
+    document.getElementById('downOneBtn').disabled = !sink;
+    document.getElementById('toBottomBtn').disabled = !sink;
     document.getElementById('cutBtn').disabled = !marks.length;
     document.getElementById('copyBtn').disabled = !marks.length;
     document.getElementById('pasteBtn').disabled = !clipboard.length;
@@ -2134,6 +2270,59 @@
     replaceShapes(raise(state.shapes.map((sh) => swap.get(sh) || sh), flipped));
     select(picked.map((sh) => swap.get(sh) || sh));
     flash(axis === 'x' ? 'Flipped left to right' : 'Flipped top to bottom');
+  }
+
+  /* Depth, a step at a time or all the way. What gets stacked is what the
+     plane paints as one — a group, or a fill with the borders it holds —
+     so a figure goes up or down whole, and a step passes one other thing
+     however many marks that thing is made of. Fills in no group are the
+     ground, with a stack of their own: they reorder among themselves and
+     never come up through a mark. The list is laid back out in the order
+     it paints, which is the order a click looks for things in as well. */
+  const RESTACKED = {
+    top: 'Brought to the top', up: 'Brought up one',
+    down: 'Sent down one', bottom: 'Sent to the bottom',
+  };
+
+  // One stack reordered, or null where nothing in it would move.
+  function shiftStack(stack, held, how) {
+    const mine = stack.map((u) => u.some((s) => held.has(s)));
+    let order = stack.map((u, k) => k);
+    if (how === 'top' || how === 'bottom') {
+      const going = order.filter((k) => mine[k]);
+      const staying = order.filter((k) => !mine[k]);
+      order = how === 'top' ? staying.concat(going) : going.concat(staying);
+    } else {
+      /* Walked from the end it is heading for, so things held side by
+         side each pass the same one and arrive side by side, rather than
+         the first to move stepping into the way of the next. */
+      const d = how === 'up' ? 1 : -1;
+      for (let k = d > 0 ? order.length - 2 : 1; k >= 0 && k < order.length; k -= d) {
+        if (mine[order[k]] && !mine[order[k + d]]) {
+          [order[k], order[k + d]] = [order[k + d], order[k]];
+        }
+      }
+    }
+    return order.some((v, k) => v !== k) ? order.map((k) => stack[k]) : null;
+  }
+
+  function restacked(marks, how) {
+    const held = new Set(marks);
+    const { ground, units } = paintUnits(state.shapes);
+    const floor = ground.map((s) => [s]);
+    const lower = shiftStack(floor, held, how);
+    const upper = shiftStack(units, held, how);
+    if (!lower && !upper) return null;
+    return [...(lower || floor), ...(upper || units)].flat();
+  }
+
+  function restackHeld(how) {
+    const marks = heldMarks();
+    if (!marks.length) return flash('Nothing in hand to restack');
+    const next = restacked(marks, how);
+    if (!next) return flash(how === 'top' || how === 'up' ? 'Already at the top' : 'Already at the bottom');
+    replaceShapes(next);
+    flash(RESTACKED[how]);
   }
 
   function ungroupPicked() {
@@ -3281,6 +3470,10 @@
   document.getElementById('flipYBtn').addEventListener('click', () => flipHeld('y'));
   document.getElementById('turnLeftBtn').addEventListener('click', () => turnHeld(-1));
   document.getElementById('turnRightBtn').addEventListener('click', () => turnHeld(1));
+  document.getElementById('toBottomBtn').addEventListener('click', () => restackHeld('bottom'));
+  document.getElementById('downOneBtn').addEventListener('click', () => restackHeld('down'));
+  document.getElementById('upOneBtn').addEventListener('click', () => restackHeld('up'));
+  document.getElementById('toTopBtn').addEventListener('click', () => restackHeld('top'));
   document.getElementById('cutBtn').addEventListener('click', () => copyToSystem(copyHeld(true)));
   document.getElementById('copyBtn').addEventListener('click', () => copyToSystem(copyHeld(false)));
   document.getElementById('pasteBtn').addEventListener('click', () => pasteMarks(clipboard));

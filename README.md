@@ -44,8 +44,8 @@ right out before letting go counts as finishing it.
 
 | Tool | |
 |---|---|
-| **Select** `Space` | Click a mark to pick it up, drag to move it. `⌘A` picks up everything on the tile. **Shift-click** adds another to what you are holding, or puts it back down; a **two-finger sweep** takes everything in an area (see below). Outlined shapes can be grabbed by their middle. A mark dragged into a neighbouring tile comes home — the plane repeats, so it is the same mark one period over |
-| **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Held drag only, and it ignores the grid entirely |
+| **Select** `Space` | Click a mark to pick it up, drag to move it. `⌘A` picks up everything on the tile. **Shift-click** adds another to what you are holding, or puts it back down; a **two-finger sweep** takes everything in an area (see below). Outlined shapes can be grabbed by their middle. A click picks a mark up without moving it: nothing moves until the press has travelled as far as a drag. A mark dragged well away comes back towards its square — the plane repeats, so it is the same mark a whole symmetry block over, where every square is turned the way the one it left was and nothing you can see moves |
+| **Pencil** `P` | Freehand, tidied when you let go: the points that carry no shape are dropped and the rest eased, with the ends pinned where your hand started and finished. Hold `Ctrl` (or `Alt`) as you let go and it is kept exactly as drawn instead. Held drag only, and it ignores the grid entirely |
 | **Line** `L` | Click each end. It then carries on from where it stopped, so a run of clicks draws a connected chain — `Esc`, or clicking the same point twice, finishes it. A line pulled out in one drag is a single line, not the start of a chain. Hold `Alt` to hold it horizontal, vertical or to 45° — to one of the six isometric ways out on the Iso frame; with a lattice up the length is quantised along that direction too |
 | **Arc** `A` | Two clicks for the ends — or one drag — then move to bend it and click to set. An arc owes its bend either way, so the drag sets the chord and hands it on to be bent. Hold `Alt` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
 | **Circle** `C` | Drag rim to rim, or click each end of a diameter — both points you place land on the circle. Hold `Alt` **as you start** to grow it from the centre instead: the first point is then the middle and the second sets the radius |
@@ -113,6 +113,17 @@ mirrors it left to right or top to bottom, and a box mirrors to a box, so unlike
 a turn it stays one. They carry no caption: four glyphs read faster in a row
 than four labels, and the words are in the tooltips.
 
+The row under them sets **depth**: to the bottom, down one, up one, to the top.
+What they stack is what the plane paints as one thing — a group, a fill and
+the borders it holds — so a figure goes up or down whole, and one step passes
+one other thing however many marks that thing is made of. Depth is the order
+of the whole tile rather than of whatever happens to overlap, so a step can
+pass a mark nowhere near and change nothing you can see. Fills in no group are
+the ground and keep a stack of their own: they reorder among themselves and
+never come up through a mark. Each pair goes quiet once there is nothing left
+to pass that way. Moving, turning and flipping still bring what they touch to
+the top, so set the depth last.
+
 **Cut** `⌘X`, **Copy** `⌘C` and **Paste** `⌘V` work on what you are holding.
 The marks go on the **real clipboard**, written as the same JSON a drawing is
 saved as, so a figure can be carried to another tile, another tab, another day —
@@ -150,6 +161,14 @@ rim for the radius. The bend grip sits on the arc itself rather than on the
 control point, which is off the curve entirely and means nothing to the eye.
 Grips take the lattice like anything else drawn, so `Snap to grid and geometry`
 pulls them onto it.
+
+A single **pencil stroke** gets grips all along its length, spaced out on
+screen so they can be told apart, with one on each end. Each sits on the stroke
+itself, and dragging it bends the stroke through the pointer: the pull is whole
+at the grip and eases off to nothing at the grips either side. So a stroke kept
+exactly as drawn, with a point every pixel or two, still bends as a curve
+rather than pulling out a spike. These ignore the lattice, as the pencil always
+has.
 
 ### With something in hand
 
@@ -376,6 +395,11 @@ size you were working to, so switching back on returns that rather than a
 default. It is a drafting aid and is independent of snapping: you can have the
 lattice without it pulling on anything.
 
+It is ruled in **dots**, where the tile rules are solid. Drawn solid the two
+differed by a shade, and at most zooms a cell of the lattice read as a square
+of the plane — a mark sitting in one cell of four looked as though it had gone
+missing from three squares in four.
+
 What you set is what you see at the fitted zoom. **Every doubling of the zoom
 halves the cells again**, drawn fainter than the lattice you asked for, so
 closing in gives you finer places to put things — up to five levels, and never
@@ -458,6 +482,7 @@ while it is being drawn:
 | Rect | Squared off on the longer side |
 | Rect on **Iso** | Equal sides: the cube face itself rather than a panel of one |
 | Circle | Grown from its centre rather than rim to rim — read at the press, so letting go midway will not switch it |
+| Pencil | Kept exactly as drawn, with nothing dropped and nothing eased — read as you let go, so it can be decided once the stroke is down |
 | Arrow keys | Five steps at a time instead of one |
 
 `Shift`-click still adds a mark to what you are holding, as does `⌘`-click.

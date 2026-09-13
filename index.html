@@ -61,7 +61,7 @@
         <svg viewBox="0 0 24 24"><path d="M6 3.2v15.1l4.1-3.8 2.7 5.9 2.6-1.2-2.7-5.9 5.7-.6z"/></svg>
         <em>Select</em>
       </button>
-      <button class="tool" data-tool="pencil" title="Pencil — P (freehand, held drag)">
+      <button class="tool" data-tool="pencil" title="Pencil — P (freehand, held drag; hold Ctrl as you let go to keep it exactly as drawn)">
         <svg viewBox="0 0 24 24"><path d="M4.2 19.8l3.9-1.1L20.6 6.4a2.1 2.1 0 0 0-3-3L5.3 15.9z"/><path d="M15.6 5.4l3 3"/></svg>
         <em>Pencil</em>
       </button>
@@ -107,6 +107,20 @@
       </button>
       <button class="wide turn" id="flipYBtn" title="Flip what you are holding top to bottom" aria-label="Flip vertically" disabled>
         <svg viewBox="0 0 24 24"><path d="M2.6 12h18.8"/><path d="M6.9 9.1L12 3.4l5.1 5.7z"/><path d="M6.9 14.9L12 20.6l5.1-5.7z"/></svg>
+      </button>
+    </div>
+    <div class="grid4 binders">
+      <button class="wide turn" id="toBottomBtn" title="Send what you are holding to the bottom, under everything else" aria-label="Send to the bottom" disabled>
+        <svg viewBox="0 0 24 24"><path d="M5.2 20.2h13.6"/><path d="M12 3.8v11.8"/><path d="M6.8 10.4l5.2 5.2 5.2-5.2"/></svg>
+      </button>
+      <button class="wide turn" id="downOneBtn" title="Send what you are holding down one, under the next thing below it" aria-label="Send down one" disabled>
+        <svg viewBox="0 0 24 24"><path d="M12 4.6v13.8"/><path d="M6.8 13.2l5.2 5.2 5.2-5.2"/></svg>
+      </button>
+      <button class="wide turn" id="upOneBtn" title="Bring what you are holding up one, over the next thing above it" aria-label="Bring up one" disabled>
+        <svg viewBox="0 0 24 24"><path d="M12 19.4V5.6"/><path d="M6.8 10.8L12 5.6l5.2 5.2"/></svg>
+      </button>
+      <button class="wide turn" id="toTopBtn" title="Bring what you are holding to the top, over everything else" aria-label="Bring to the top" disabled>
+        <svg viewBox="0 0 24 24"><path d="M5.2 3.8h13.6"/><path d="M12 20.2V8.4"/><path d="M6.8 13.6L12 8.4l5.2 5.2"/></svg>
       </button>
     </div>
     <div class="grid3 binders">
