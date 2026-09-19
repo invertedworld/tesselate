@@ -493,7 +493,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* The gradient's own controls, shown only while the ink is one. */
 .grad-body { animation: unfold 0.16s ease both; }
 .grad-body .sub-row { margin-top: 8px; }
-.grad-body .modes { margin-left: auto; }
 /* The eyedropper and the + go with the ink: beside the flat colour, or
    at the head of the sweep once the ink is a gradient. */
 .ink-tools { display: flex; gap: 5px; }

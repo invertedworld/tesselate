@@ -56,18 +56,22 @@ right out before letting go counts as finishing it.
 
 Directly under the tools is a box named for the tool in hand, holding its
 controls and no others: *Snap to grid and geometry* for the tools that snap —
-Select, Line, Arc, Circle and Rect; *Width* for the tools that draw strokes, and
-for Select, which sets it on everything held; the group, turn, depth and
-clipboard buttons for Select, since they work on what it is holding; *Filled
-shapes* for Circle and Rect; *Smooth* for the pencil; and the warp's own
-controls for Warp, with the anchor held set apart inside it. The fill and the
-eraser have none, and have no box.
+Select, Line, Arc, Circle and Rect; *Thickness* for the tools that draw strokes,
+and for Select, which sets it on everything held; *Sweep across*, while there is
+a gradient about, for the tools that put ink down and for Select; the group,
+turn, depth and clipboard buttons for Select, since they work on what it is
+holding; *Filled shapes* for Circle and Rect; *Smooth* for the pencil; and the
+warp's own controls for Warp, with the anchor held set apart inside it. The
+eraser has none, and has no box; nor has the fill, unless it holds a gradient.
 
 The same rule runs down the whole rail: controls that act on one thing are
 boxed together and named for it, so nothing reads as belonging to its
 neighbour. The colours to pick from are the **Palette**; the colour in hand is
-the **Ink**; how heavy a stroke is drawn is the tool's. The keys work whichever tool is up — `S` still switches
-snapping from the pencil.
+the **Ink**; how thick a stroke is drawn is the tool's. The Palette and the Ink
+show only for the tools that put colour down — Pencil, Line, Arc, Circle, Rect
+and Fill — and are put away for Select, Erase and Warp. The keys work whichever
+tool is up — `S` still switches snapping from the pencil, and a number key still
+recolours what Select is holding.
 
 Straight geometry is stroked with **flat ends**, so a line stops exactly on
 the point it was placed on and runs flush to the tile edge to meet its own
@@ -179,8 +183,8 @@ click on another member of it holds that member rather than the whole group
 over again; a click on anything outside it starts from the top. A drag always
 moves what is held, so it is a click, not a press, that goes further in.
 
-Whatever is held, however far in, is what the palette recolours — every mark of
-it — what the arrows nudge and what `Delete` removes. Grouping things held
+Whatever is held, however far in, is what the number keys recolour — every mark
+of it — what the arrows nudge and what `Delete` removes. Grouping things held
 inside a group makes the new group inside that one, and a duplicate made there
 stays there.
 
@@ -289,20 +293,28 @@ from it, red to green, blue to orange, yellow to violet, as light and as strong
 as it is; or for a grey, which has no complement, the grey across from it, black
 to white — so there is a sweep to see at once. Switching it off keeps the
 colour it started from. After that it remembers the sweep, and switching it back
-on returns the angle, the anchor and the colour it faded to. The angle is
-degrees clockwise from east.
+on returns the angle and the colour it faded to. The angle is degrees clockwise
+from east.
 
 A **swatch** is the ink it shows, whole — clicked in the palette or the recent
 strip, or chosen with a number key. A plain colour puts the gradient away and a
 gradient brings it out, and the switch follows either way; the sweep put away is
 remembered, so switching back on returns it.
 
-*Across* decides what the sweep is measured over, and both choices repeat
-exactly:
+What a sweep is measured over is not the gradient's but the stroke's or the
+fill's that wears it, so one gradient from the palette can lie across a mark in
+one place and across the tile in another. *Sweep across*, in the tool box, sets
+it — for the marks to come and, with something held, for every gradient held —
+and both choices repeat exactly:
 
 - **Mark** — each mark's own bounds, so every copy of it looks the same
   wherever it lands on the plane.
 - **Tile** — the square, so a whole figure fades together across it.
+
+A stroke and a fill on the same mark each keep their own. The fill tool paints
+with the ink in hand and the way it lies; recolouring what Select holds from the
+ink keeps the way each held sweep already lay; and the eyedropper takes a sweep
+off a mark together with the way it lay there.
 
 There is deliberately no sweep across the plane: the plane is infinite, so
 there is nothing for the stops to run between, and a drawing painted that way
@@ -312,12 +324,15 @@ A gradient is written as text, so it saves, keys a palette and goes on a swatch
 exactly the way a flat colour does — nothing else in the app has to know about
 a second kind of value:
 
-    lin(45,shape,#cf4326,#2b4a9c)
+    lin(45,#cf4326,#2b4a9c)
+
+Ink written before carried what it ran across as a field of its own —
+`lin(45,tile,…)` — and still opens: the field moves onto the mark wearing it.
 
 The switch heads the **Ink** panel, and with the gradient on the ink's
 controls become the gradient's own, in three boxes. **Sweep** is the gradient as
 a whole: a button that swaps the two ends and the **+** that keeps it in the
-palette, at its head, then the angle and what it runs across.
+palette, at its head, then the angle.
 
 The angle is set on a **dial**: a square of the sweep as it will fall across a
 mark, with a hand pointing the way it runs, so the effect is seen as it is set.
@@ -390,7 +405,7 @@ It is meant to be read. One mark per line, so a drawing diffs like source:
      "pattern": {"n":2,"cells":[0,1,3,2]},
      "plane": {"grid":true,"snap":false,"sub":8,"subLast":8,"diag":"off",
                "warp":{"amount":1,"repeat":"plane","ink":"swell","anchors":[{"x":500,"y":500,"r":400,"bulge":0.5,"twirl":0}]}},
-     "ink": {"color":"#cf4326","width":9,"filled":false},
+     "ink": {"color":"#cf4326","across":"shape","width":9,"filled":false},
      "palette": {"name":"Riso · 15","palettes":[…],"recent":[…]},
      "shapes": [
       {"id":1,"layer":"stroke","kind":"line","color":"#cf4326","width":9,"pts":[…]},
@@ -401,7 +416,10 @@ It is meant to be read. One mark per line, so a drawing diffs like source:
 Coordinates are in tile units — the tile is `tile` across, 1000 — so a drawing
 is resolution-free and stays exact at any zoom. A mark in a group carries
 `group`, the outermost group it is in; one inside a group within a group also
-carries `groups`, the whole chain, outermost first.
+carries `groups`, the whole chain, outermost first. A stroke or fill in a
+gradient that lies across the tile says so with `"across":"tile"` beside its
+`color`, or `"fillAcross":"tile"` beside its `fillColor`; without it the sweep
+lies across the mark.
 
 Where the browser has the File System Access API (**Chrome and Edge only** —
 Safari and Firefox have none), the file you opened or saved is **kept**: *Save* writes straight back to it without asking
@@ -529,11 +547,11 @@ Three grids to draft on:
   together, so a tile-aligned square reads as a diamond on screen. Drawing
   works unchanged; the pointer is mapped back through the angle.
 
-**A slider with something in hand works on what is held.** *Width* sets every
-stroke held, and *Alpha* changes how far you see through each of them while
-each keeps its own colour — setting them all to one colour is what picking a
-colour is for. A run of the slider is a single step to undo, not one per pixel
-of travel.
+**A slider with something in hand works on what is held.** *Thickness* sets every
+stroke held, and *Sweep across* every gradient held. A run of the slider is a
+single step to undo, not one per pixel of travel. The palette and the ink are
+put away while Select is up, so held marks are recoloured with the number keys,
+or with the fill tool, which recolours whatever it is clicked on.
 
 *Snap to grid and geometry* (`S`), under the tools, pulls new geometry onto the
 lattice **and onto the marks already on the tile** — the ends and middles of

@@ -49,14 +49,15 @@
      compares, keys a map and sits in a palette exactly the way a hex
      does — nothing downstream has to learn a second kind of value:
 
-       lin(45,shape,#cf4326,#2b4a9c)
+       lin(45,#cf4326,#2b4a9c)
 
-     The angle is degrees clockwise from east. The anchor is what the
-     sweep is measured across: `shape` the mark's own bounds, so every
-     copy of it looks the same; `tile` the square, so a whole figure can
-     fade across it. Both repeat exactly, which a sweep across the plane
-     could not — the plane has no edges to run between. */
-  const GRAD_RE = /^lin\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(shape|tile)\s*,\s*(.+?)\s*\)$/i;
+     The angle is degrees clockwise from east. What the sweep is measured
+     across is not the gradient's: it belongs to the stroke or the fill
+     that wears it (see ACROSS), so one gradient in the palette can lie
+     across a mark in one place and across the tile in another. Ink
+     written before that carried it as a field of its own — lin(45,tile,…)
+     — and is still read. */
+  const GRAD_RE = /^lin\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(?:(shape|tile)\s*,\s*)?(.+?)\s*\)$/i;
 
   function parseInk(v) {
     if (typeof v !== 'string') return null;
@@ -64,13 +65,43 @@
     if (!m) return null;
     const stops = m[3].split(',').map((c) => normHex(c));
     if (stops.length < 2 || stops.some((c) => !c)) return null;
-    return { deg: ((+m[1] % 360) + 360) % 360, anchor: m[2].toLowerCase(), stops };
+    return { deg: ((+m[1] % 360) + 360) % 360, stops };
   }
 
-  const gradText = (g) => `lin(${+g.deg.toFixed(1)},${g.anchor},${g.stops.join(',')})`;
+  const gradText = (g) => `lin(${+g.deg.toFixed(1)},${g.stops.join(',')})`;
 
   // Either kind of ink, or null if it is neither.
-  const normInk = (v) => (parseInk(v) ? v.trim() : normHex(v));
+  function normInk(v) {
+    const g = parseInk(v);
+    return g ? gradText(g) : normHex(v);
+  }
+
+  // What ink written the old way said its sweep ran across, or null.
+  function acrossWritten(v) {
+    const m = typeof v === 'string' && GRAD_RE.exec(v.trim());
+    return m && m[2] ? m[2].toLowerCase() : null;
+  }
+
+  /* Whether a sweep lies across the mark that wears it — its own bounds,
+     so every copy of it looks the same — or across the tile, so a whole
+     figure fades together, belongs to the stroke or the fill, each on its
+     own: `across` goes with a mark's `color` and `fillAcross` with its
+     `fillColor`, and either is written only when it is the tile. Both
+     repeat exactly, which a sweep across the plane could not — the plane
+     has no edges to run between. */
+  const ACROSS = { color: 'across', fillColor: 'fillAcross' };
+  const acrossOf = (sh, slot) => (sh[ACROSS[slot]] === 'tile' ? 'tile' : 'shape');
+
+  // A mark saved while the gradient said what it ran across has that
+  // moved onto the stroke or fill wearing it.
+  function settleAcross(sh) {
+    for (const slot of ['color', 'fillColor']) {
+      const was = acrossWritten(sh[slot]);
+      if (!was) continue;
+      sh[slot] = normInk(sh[slot]);
+      if (was === 'tile') sh[ACROSS[slot]] = 'tile';
+    }
+  }
 
   function rgbOf(hex) {
     const g = parseInk(hex);
@@ -315,6 +346,7 @@
     shapes: [],
     tool: 'pencil',
     color: PALETTE[2],
+    across: 'shape',    // what a sweep laid down now lies across: 'shape' or 'tile'
     width: 9,
     smooth: 25,         // how far the pencil tidies a stroke, 0 to 100
     palette: BUILT_IN[0].name,
@@ -340,6 +372,7 @@
      strip are the table's, and survive it. */
   const DEFAULTS = {
     color: state.color,
+    across: state.across,
     width: state.width,
     filled: state.filled,
     grid: state.grid,
@@ -904,16 +937,18 @@
   /* `part` paints one half of a mark that has both: 'inside' its own
      interior, 'outline' its border. They go down at different depths —
      see paintOrder — so the plane asks for them separately. */
-  /* Ink as the canvas wants it. A flat colour is its own string; a
-     gradient becomes a sweep laid across whichever box it is anchored
-     to — the mark's own bounds, or the tile. This runs inside the tile's
-     own transform, so the box is in tile units and every copy of the
-     mark across the plane gets the same sweep. */
-  function inkStyle(ink, s) {
+  /* The ink of a mark's stroke or fill (`slot`) as the canvas wants it. A
+     flat colour is its own string; a gradient becomes a sweep laid across
+     whichever box that stroke or fill says — the mark's own bounds, or
+     the tile. This runs inside the tile's own transform, so the box is in
+     tile units and every copy of the mark across the plane gets the same
+     sweep. */
+  function inkStyle(s, slot) {
+    const ink = s[slot];
     const g = parseInk(ink);
     if (!g) return ink;
     let box = { x0: 0, y0: 0, x1: T, y1: T };
-    if (g.anchor === 'shape') {
+    if (acrossOf(s, slot) === 'shape') {
       const b = shapeBBox(s);
       // A straight line has no thickness to its bounds; the ink does.
       const pad = s.layer === 'stroke' && !s.filled ? (s.width || 0) / 2 : 0;
@@ -939,21 +974,21 @@
     const bent = i == null ? null : warpedCopy(s, part, i, j, paintWarp);
     const p = bent ? bentPath(bent) : s === draft ? draftPath : pathOf(s);
     if (s.layer === 'fill') {
-      ctx.fillStyle = inkStyle(s.color, s);
+      ctx.fillStyle = inkStyle(s, 'color');
       ctx.fill(p, 'evenodd');
     } else if (s.filled) {
-      ctx.fillStyle = inkStyle(s.color, s);
+      ctx.fillStyle = inkStyle(s, 'color');
       ctx.fill(p);
     } else {
       if (s.fillColor && part !== 'outline') {
-        ctx.fillStyle = inkStyle(s.fillColor, s);
+        ctx.fillStyle = inkStyle(s, 'fillColor');
         ctx.fill(p);
       }
       if (part === 'inside') return;
       const [cap, join] = capsOf(s.kind);
       ctx.lineCap = cap;
       ctx.lineJoin = join;
-      const style = inkStyle(s.color, s);
+      const style = inkStyle(s, 'color');
       ctx.strokeStyle = style;
       ctx.fillStyle = style;
       // Swelled, a stroke is the area it covers, rounded joins and all.
@@ -1961,6 +1996,7 @@
      whatever came in. */
   function adoptIds(list) {
     for (const sh of list) {
+      settleAcross(sh);
       /* A chain of groups is written only where there is more than one, and
          its outermost is the group, whatever the file says. */
       if (Array.isArray(sh.groups)) {
@@ -1976,8 +2012,8 @@
 
   function newStroke(extra) {
     return Object.assign({
-      id: shapeSeq++, layer: 'stroke', color: state.color, width: state.width,
-    }, extra);
+      id: shapeSeq++, layer: 'stroke', width: state.width,
+    }, inkFor('color'), extra);
   }
 
   // Returns false when the press turned out to be nothing to draw, so
@@ -2671,6 +2707,7 @@
   const heldFrame = () => movingFrame(firstAt() || frameTile());
 
   function syncEditButtons() {
+    syncAcross();
     const g = document.getElementById('groupBtn');
     const u = document.getElementById('ungroupBtn');
     if (!g || !u) return;
@@ -2869,6 +2906,7 @@
     const list = d && (Array.isArray(d.marks) ? d.marks : Array.isArray(d.shapes) ? d.shapes : null);
     if (!list) return null;
     const marks = list.filter((sh) => sh && sh.kind);
+    marks.forEach(settleAcross);
     return marks.length ? marks : null;
   }
 
@@ -3162,8 +3200,8 @@
   }
 
   function recolour(shape) {
-    if (shape.color === state.color) return flash('Already that ink');
-    const next = Object.assign({}, shape, { color: state.color });
+    if (wears(shape, 'color')) return flash('Already that ink');
+    const next = Object.assign({}, shape, inkFor('color'));
     replaceShapes(state.shapes.map((sh) => (sh === shape ? next : sh)));
     select(picked.map((sh) => (sh === shape ? next : sh)));
     flash('Mark recoloured');
@@ -3173,13 +3211,13 @@
   // the inside of any mark that carries one.
   function recolourFigure(shape) {
     const members = new Set(groupOf(shape));
-    const has = (sh) => sh.color === state.color && (!sh.fillColor || sh.fillColor === state.color);
+    const has = (sh) => wears(sh, 'color') && (!sh.fillColor || wears(sh, 'fillColor'));
     if ([...members].every(has)) return flash('Already that ink');
     const swap = new Map();
     const next = state.shapes.map((sh) => {
       if (!members.has(sh)) return sh;
-      const copy = Object.assign({}, sh, { color: state.color });
-      if (sh.fillColor) copy.fillColor = state.color;
+      const copy = Object.assign({}, sh, inkFor('color'));
+      if (sh.fillColor) Object.assign(copy, inkFor('fillColor'));
       swap.set(sh, copy);
       return copy;
     });
@@ -3506,7 +3544,7 @@
     if (host) {
       // An inside it has already is the figure being recoloured.
       if (host.fillColor) return recolourFigure(host);
-      const next = Object.assign({}, host, { fillColor: state.color });
+      const next = Object.assign({}, host, inkFor('fillColor'));
       replaceShapes(state.shapes.map((sh) => (sh === host ? next : sh)));
       select(picked.map((sh) => (sh === host ? next : sh)));
       return flash('Filled — border and interior are one mark');
@@ -3514,7 +3552,7 @@
 
     region.id = shapeSeq++;
     region.layer = 'fill';
-    region.color = state.color;
+    Object.assign(region, inkFor('color'));
     // Remember what the area came up against, so it can never be painted
     // over the top of it.
     region.walls = walls.map((sh) => sh.id).filter((v) => v != null);
@@ -3970,14 +4008,55 @@
        shapes for Circle and Rect, Smooth for the pencil, and the warp for
        Warp. Each says in `data-for` which tools it belongs to, and a tool
        with none has no box. */
-    for (const el of document.querySelectorAll('[data-for]')) {
-      el.hidden = !el.dataset.for.split(' ').includes(tool);
-    }
-    const toolCard = document.getElementById('toolCard');
-    toolCard.hidden = ![...toolCard.querySelectorAll('[data-for]')].some((el) => !el.hidden);
+    syncAcross();
     document.getElementById('toolCardTitle').textContent = document.querySelector(`.tool[data-tool="${tool}"] em`).textContent;
     setHint(HINTS[tool] || HINTS.base);
     saveSoon();
+  }
+
+  /* The ink in hand as it goes on to a stroke or a fill: the colour and,
+     with a sweep, the way the sweep lies across it. */
+  function inkFor(slot) {
+    return { [slot]: state.color, [ACROSS[slot]]: parseInk(state.color) && state.across === 'tile' ? 'tile' : undefined };
+  }
+  // Whether a stroke or fill wears the ink in hand already, lying the same way.
+  function wears(sh, slot) {
+    return sh[slot] === state.color && (!parseInk(state.color) || acrossOf(sh, slot) === state.across);
+  }
+
+  /* Each control in the tool box says in `data-for` which tools it belongs
+     to, and a tool with none has no box. What a sweep lies across says
+     `data-when="sweep"` as well: it shows only while there is a gradient
+     about — in hand, or for Select, which has no ink of its own to show,
+     on something held. */
+  function syncToolCard() {
+    const tool = state.tool;
+    const sweep = tool === 'select' ? heldSweeps().length > 0 : !!parseInk(state.color);
+    for (const el of document.querySelectorAll('[data-for]')) {
+      el.hidden = !el.dataset.for.split(' ').includes(tool) || (el.dataset.when === 'sweep' && !sweep);
+    }
+    const toolCard = document.getElementById('toolCard');
+    toolCard.hidden = ![...toolCard.querySelectorAll('[data-for]')].some((el) => !el.hidden);
+  }
+
+  // Every stroke and fill held that wears a sweep, as [mark, slot].
+  function heldSweeps() {
+    const out = [];
+    for (const sh of heldMarks()) {
+      for (const slot of ['color', 'fillColor']) if (parseInk(sh[slot])) out.push([sh, slot]);
+    }
+    return out;
+  }
+
+  /* What a sweep lies across: the marks to come, or — with something held
+     that wears one — what it holds, lit only if they all agree. */
+  function syncAcross() {
+    const worn = heldSweeps();
+    const ways = new Set(worn.length ? worn.map(([sh, slot]) => acrossOf(sh, slot)) : [state.across]);
+    for (const b of document.getElementById('acrossModes').children) {
+      b.classList.toggle('on', ways.size === 1 && ways.has(b.dataset.across));
+    }
+    syncToolCard();
   }
 
   function setColor(raw, quiet, inkOnly) {
@@ -3988,7 +4067,11 @@
     if (!inkOnly && picked.length) {
       const swap = new Map();
       // Every mark held, not only the ones clicked: a group is held whole.
-      for (const sh of heldMarks()) if (sh.color !== hex) swap.set(sh, Object.assign({}, sh, { color: hex }));
+      // A stroke that already wore a sweep keeps the way it lay; one taking
+      // a sweep for the first time lies the way the hand says.
+      for (const sh of heldMarks()) {
+        if (sh.color !== hex) swap.set(sh, Object.assign({}, sh, parseInk(sh.color) ? { color: hex } : inkFor('color')));
+      }
       if (swap.size) {
         replaceShapes(state.shapes.map((sh) => swap.get(sh) || sh), sliderRun);
         select(picked.map((sh) => swap.get(sh) || sh));
@@ -4024,10 +4107,14 @@
     const border = hitTest(w, { strokesOnly: true, edgeOnly: true, anyTile: true });
     const mark = border || hitTest(w, { interior: true, anyTile: true });
     if (mark) {
-      const hex = !border && mark.layer === 'stroke' && !mark.filled && mark.fillColor
-        ? mark.fillColor
-        : mark.color;
+      const slot = !border && mark.layer === 'stroke' && !mark.filled && mark.fillColor
+        ? 'fillColor'
+        : 'color';
+      const hex = mark[slot];
+      // A sweep comes off with the way it lay there.
+      if (parseInk(hex)) state.across = acrossOf(mark, slot);
       takeInk(hex);
+      syncAcross();
       return flash(`Took ${hex}`);
     }
     const x = clamp(Math.round(s.x * dpr), 0, canvas.width - 1);
@@ -4486,6 +4573,7 @@
     if (add.parentNode !== tools) tools.append(add);
     syncGrad(g, quiet);
     markSwatches();
+    syncAcross();
     alphaInput.value = Math.round((a / 255) * 100);
     alphaVal.textContent = alphaInput.value;
     if (!quiet && document.activeElement !== hexInput) {
@@ -4652,7 +4740,6 @@
   const gradOn = document.getElementById('gradOn');
   const gradAngle = document.getElementById('gradAngle');
   const gradDial = document.getElementById('gradDial');
-  const gradAnchor = document.getElementById('gradAnchor');
 
   /* Each end of the sweep keeps everything that belongs to it together:
      its well, its hex, the system picker and its own alpha. They used to
@@ -4701,7 +4788,6 @@
     document.getElementById('gradDialInk').style.background = `linear-gradient(${g.deg + 90}deg, ${two.join(', ')})`;
     document.getElementById('gradDialHand').setAttribute('transform', `rotate(${g.deg})`);
     gradDial.setAttribute('aria-valuenow', String(g.deg));
-    for (const b of gradAnchor.children) b.classList.toggle('on', b.dataset.anchor === g.anchor);
   }
 
   // Change one part of the sweep and leave the rest as it was.
@@ -4750,7 +4836,6 @@
     const was = lastGrad;
     setColor(gradText({
       deg: was ? was.deg : 90,
-      anchor: was ? was.anchor : 'shape',
       // The near stop is the ink in hand: that is what the switch was
       // showing while the gradient was off, and it may have been changed
       // since.
@@ -4873,9 +4958,25 @@
     const step = ev.shiftKey ? 45 : 5;
     editGrad({ deg: (((Math.round(g.deg / step) + way) * step) % 360 + 360) % 360 });
   });
-  gradAnchor.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-anchor]');
-    if (b) editGrad({ anchor: b.dataset.anchor });
+
+  /* What a sweep lies across is set for the marks to come and, with
+     something held, on every stroke and fill held that wears one. */
+  document.getElementById('acrossModes').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-across]');
+    if (!b) return;
+    state.across = b.dataset.across;
+    const tile = state.across === 'tile' ? 'tile' : undefined;
+    applyToHeld((sh) => {
+      let next = null;
+      for (const slot of ['color', 'fillColor']) {
+        if (parseInk(sh[slot]) && acrossOf(sh, slot) !== state.across) {
+          next = Object.assign(next || Object.assign({}, sh), { [ACROSS[slot]]: tile });
+        }
+      }
+      return next;
+    });
+    syncAcross();
+    saveSoon();
   });
 
   /* ---------------- the sliders, with something in hand ---------------- */
@@ -5316,6 +5417,7 @@
     state.filled = DEFAULTS.filled;
     setDiag(DEFAULTS.diag, true);
     setWidth(DEFAULTS.width);
+    state.across = DEFAULTS.across;
     setColor(DEFAULTS.color, false, true);
     setSub(DEFAULTS.sub);
     state.view = { ...DEFAULTS.view };
@@ -5449,7 +5551,7 @@
         grid: state.grid, arrows: state.arrows, snap: state.snap,
         sub: state.sub, subLast: state.subLast, diag: state.diag, warp: state.warp,
       },
-      ink: { color: state.color, width: state.width, filled: state.filled },
+      ink: { color: state.color, across: state.across, width: state.width, filled: state.filled },
       palette: {
         name: state.palette,
         palettes: state.palettes,
@@ -5550,6 +5652,8 @@
     const ink = d.ink || {};
     if (typeof ink.filled === 'boolean') state.filled = ink.filled;
     if (typeof ink.width === 'number') setWidth(ink.width);
+    const across = ink.across || acrossWritten(ink.color);
+    if (across === 'shape' || across === 'tile') state.across = across;
     if (normInk(ink.color)) setColor(ink.color, false, true);
 
     setSub(state.sub);
@@ -5681,11 +5785,12 @@
        does on screen. */
     const defs = [];
     const gradOf = new Map();
-    function svgInk(attr, ink, sh) {
+    function svgInk(attr, sh, slot) {
+      const ink = sh[slot];
       const g = parseInk(ink);
       if (!g) return svgPaint(attr, ink);
       let box = { x0: 0, y0: 0, x1: T, y1: T };
-      if (g.anchor === 'shape') {
+      if (acrossOf(sh, slot) === 'shape') {
         const b = shapeBBox(sh);
         const pad = sh.layer === 'stroke' && !sh.filled ? (sh.width || 0) / 2 : 0;
         if (b) box = { x0: b.x0 - pad, y0: b.y0 - pad, x1: b.x1 + pad, y1: b.y1 + pad };
@@ -5731,22 +5836,22 @@
         const d = got ? linesData(got.lines) : pathData(s);
         if (!d) continue;
         if (entry.inside) {
-          out.push(`<path d="${d}" ${svgInk('fill', s.fillColor, s)}/>`);
+          out.push(`<path d="${d}" ${svgInk('fill', s, 'fillColor')}/>`);
           continue;
         }
-        if (s.layer === 'fill') out.push(`<path d="${d}" ${svgInk('fill', s.color, s)} fill-rule="evenodd"/>`);
+        if (s.layer === 'fill') out.push(`<path d="${d}" ${svgInk('fill', s, 'color')} fill-rule="evenodd"/>`);
         // Swelled, a stroke is written as the area it covers.
-        else if (s.filled || (got && got.how === 'nonzero')) out.push(`<path d="${d}" ${svgInk('fill', s.color, s)}/>`);
+        else if (s.filled || (got && got.how === 'nonzero')) out.push(`<path d="${d}" ${svgInk('fill', s, 'color')}/>`);
         else {
           const [cap, join] = capsOf(s.kind);
-          out.push(`<path d="${d}" fill="none" ${svgInk('stroke', s.color, s)}`
+          out.push(`<path d="${d}" fill="none" ${svgInk('stroke', s, 'color')}`
             + ` stroke-width="${s.width}" stroke-linecap="${cap}" stroke-linejoin="${join}"/>`);
           if (got) {
-            if (got.discs.length) out.push(`<path d="${linesData(got.discs)}" ${svgInk('fill', s.color, s)}/>`);
+            if (got.discs.length) out.push(`<path d="${linesData(got.discs)}" ${svgInk('fill', s, 'color')}/>`);
           } else if (ROUNDABLE[s.kind]) {
             for (const p of endpointsOf(s)) {
               if (!junctions.has(jkey(p))) continue;
-              out.push(`<circle cx="${p.x}" cy="${p.y}" r="${s.width / 2}" ${svgInk('fill', s.color, s)}/>`);
+              out.push(`<circle cx="${p.x}" cy="${p.y}" r="${s.width / 2}" ${svgInk('fill', s, 'color')}/>`);
             }
           }
         }
@@ -5817,7 +5922,7 @@
       try {
         localStorage.setItem(KEY, JSON.stringify({
           shapes: state.shapes, pattern: state.pattern, tool: state.tool,
-          color: state.color, width: state.width, filled: state.filled,
+          color: state.color, across: state.across, width: state.width, filled: state.filled,
           palette: state.palette, palettes: state.palettes, recent: state.recent,
           grid: state.grid, arrows: state.arrows, snap: state.snap, sub: state.sub,
           subLast: state.subLast, diag: state.diag, warp: state.warp, smooth: state.smooth,
@@ -5853,6 +5958,8 @@
     }
     if (typeof d.palette === 'string') state.palette = d.palette;
     if (normInk(d.color)) state.color = normInk(d.color);
+    const across = d.across || acrossWritten(d.color);
+    if (across === 'shape' || across === 'tile') state.across = across;
     if (typeof d.width === 'number') state.width = clamp(d.width, 1, 64);
     for (const f of ['filled', 'grid', 'arrows', 'snap']) {
       if (typeof d[f] === 'boolean') state[f] = d[f];

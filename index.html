@@ -100,10 +100,19 @@
     <div class="card" id="toolCard">
       <div class="card-title" id="toolCardTitle">Tool</div>
       <button class="wide toggle" data-toggle="snap" data-for="select line curve circle rect" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
-      <div class="row slide" id="widthRow" data-for="select pencil line curve circle rect" title="How heavy a stroke is drawn — and, with something held, every stroke held">
-        <span class="mono tiny">Width</span>
-        <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke weight">
+      <div class="row slide" id="widthRow" data-for="select pencil line curve circle rect" title="How thick a stroke is drawn — and, with something held, every stroke held">
+        <span class="mono tiny">Thickness</span>
+        <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke thickness">
         <span class="mono num" id="widthVal">9</span>
+      </div>
+      <!-- What a gradient lies across belongs to the stroke or fill that
+           wears it, not to the gradient: shown only with a gradient about. -->
+      <div class="row" id="acrossRow" data-for="select pencil line curve circle rect fill" data-when="sweep" title="What a gradient lies across — for the marks to come and, with something held, every gradient held">
+        <span class="mono tiny">Sweep across</span>
+        <div class="modes" id="acrossModes">
+          <button data-across="shape" title="Each mark's own bounds, so every copy of it looks the same">Mark</button>
+          <button data-across="tile" title="The square, so a whole figure fades together — and still repeats exactly">Tile</button>
+        </div>
       </div>
       <button class="wide toggle" data-toggle="filled" id="filledBtn" data-for="circle rect">
         <span class="tick"></span><span>Filled shapes</span>
@@ -195,7 +204,8 @@
     </div>
   </section>
 
-  <section class="panel">
+  <!-- The colour panels show only for the tools that put colour down. -->
+  <section class="panel" id="palettePanel" data-for="pencil line curve circle rect fill">
     <div class="label"><span>Palette</span><i></i></div>
 
     <div class="pal-bar">
@@ -218,7 +228,7 @@
   </section>
 
   <!-- The colour in hand: flat, or a gradient between two ends. -->
-  <section class="panel">
+  <section class="panel" id="inkPanel" data-for="pencil line curve circle rect fill">
     <div class="label"><span>Ink</span><i></i></div>
 
     <button class="wide toggle" id="gradOn" title="Fade the ink from one colour to another"><span class="tick"></span><span>Gradient</span></button>
@@ -273,13 +283,6 @@
                 <input type="number" id="gradAngle" class="mono hex" min="0" max="359" step="5" value="90" aria-label="Angle of the sweep, in degrees clockwise from east">
                 <span class="mono tiny">deg</span>
               </span>
-            </div>
-            <div class="sub-row">
-              <span class="mono tiny">Across</span>
-              <div class="modes" id="gradAnchor">
-                <button data-anchor="shape" title="The sweep runs across each mark's own bounds, so every copy of it looks the same">Mark</button>
-                <button data-anchor="tile" title="The sweep runs across the square, so a whole figure fades together — and still repeats exactly">Tile</button>
-              </div>
             </div>
           </div>
         </div>
