@@ -398,10 +398,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Somewhere to aim at while it is still empty — a new palette starts
    that way, and dropping a colour in is how it stops being. */
 .swatches { min-height: 30px; }
-/* The strip a colour is being dragged into, and the place in it the
-   drop would land — a bar down the side of the swatch it would go in
+/* The strip a colour is being dragged into — or the end of a sweep it
+   would fill — and the place in a strip the drop would land — a bar down the side of the swatch it would go in
    front of, or behind the last one where it would go on the end. */
-.swatches.drop, .recent.drop {
+.swatches.drop, .recent.drop, .card.drop {
   outline: 1px dashed var(--accent);
   outline-offset: 3px;
 }
@@ -494,6 +494,75 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .grad-body { animation: unfold 0.16s ease both; }
 .grad-body .sub-row { margin-top: 8px; }
 .grad-body .modes { margin-left: auto; }
+/* The eyedropper and the + go with the ink: beside the flat colour, or
+   at the head of the sweep once the ink is a gradient. */
+.ink-tools { display: flex; gap: 5px; }
+.ink-tools:empty { display: none; }
+/* The angle, set by hand. The dial is a square of the sweep as it will
+   fall across a mark — CSS measures a gradient's length the way the plane
+   does, corner to corner — with a hand pointing the way it runs. */
+.sweep-set { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.sweep-fields { flex: 1; min-width: 0; }
+.sweep-fields .sub-row:first-child { margin-top: 0; }
+.dial {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  flex: 0 0 60px;
+  border: 1px solid var(--ink-22);
+  border-radius: 3px;
+  cursor: grab;
+  touch-action: none;
+}
+.dial.turning { cursor: grabbing; }
+.dial:hover, .dial:focus-visible { border-color: var(--ink-60); outline: none; }
+.dial i { position: absolute; inset: 0; border-radius: 2px; }
+.dial svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.dial svg g.shade { fill: rgba(0, 0, 0, 0.5); stroke: rgba(0, 0, 0, 0.5); stroke-width: 4.2; stroke-linecap: round; stroke-linejoin: round; }
+.dial svg g.hand { fill: #fff; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.dial svg path { fill: none; }
+.angle-field { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+.angle-field input { flex: 0 0 46px; width: 46px; text-align: right; padding: 0 6px; -moz-appearance: textfield; appearance: textfield; }
+.angle-field input::-webkit-inner-spin-button,
+.angle-field input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.mini.swap { width: 26px; height: 26px; padding: 0; }
+.mini.swap svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Controls that belong to one thing are boxed, so that they read as one:
+   the tool in hand, the sweep of a gradient, each end of it. The title
+   says what the box is about; anything in a panel outside a box is about
+   the panel as a whole. */
+.card {
+  margin-top: 10px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--ink-12);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.12);
+}
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-42);
+}
+.card > .card-title + .mixer { margin-top: 7px; }
+/* Buttons that act on the box as a whole sit at the end of its title. */
+.card-tools { display: flex; align-items: center; gap: 5px; margin: -4px 0 -4px auto; }
+/* A group within a group — the anchor held, within the warp — set off by
+   a rule rather than a second box. */
+.subgroup { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--ink-12); }
 .swatch-preview {
   width: 26px;
   height: 26px;
@@ -520,30 +589,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .hex:focus { outline: none; border-color: var(--ink-42); background: #2b2b29; }
 .hex.bad { border-color: var(--accent); color: var(--accent); }
 
-.pick {
-  position: relative;
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--ink-22);
-  border-radius: 2px;
-  cursor: pointer;
-  transition: background 0.13s ease;
-}
-.pick:hover { background: var(--ink-06); }
-.pick svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: var(--ink-60);
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
-.pick input {
+/* A colour's own well is its picker: click it and the system colour
+   picker opens on that colour. There is no separate picker button beside
+   it to find. */
+.well-pick { cursor: pointer; transition: border-color 0.13s ease; }
+.well-pick:hover { border-color: var(--ink-60); }
+.well-pick input {
   position: absolute;
   inset: 0;
   opacity: 0;

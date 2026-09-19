@@ -94,90 +94,103 @@
         <em>Warp</em>
       </button>
     </div>
-    <button class="wide toggle" data-toggle="snap" data-for="select line curve circle rect" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
-    <div class="grid2 binders" data-for="select">
-      <button class="wide" id="groupBtn" title="Bind what you are holding into one thing — G or ⌘G" disabled>Group</button>
-      <button class="wide" id="ungroupBtn" title="Let it loose again — U or ⇧⌘G" disabled>Ungroup</button>
-    </div>
-    <div class="grid4 binders" data-for="select">
-      <button class="wide turn" id="turnLeftBtn" title="Turn what you are holding 45° anticlockwise" aria-label="Turn anticlockwise" disabled>
-        <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-      </button>
-      <button class="wide turn" id="turnRightBtn" title="Turn what you are holding 45° clockwise" aria-label="Turn clockwise" disabled>
-        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-      </button>
-      <button class="wide turn" id="flipXBtn" title="Flip what you are holding left to right" aria-label="Flip horizontally" disabled>
-        <svg viewBox="0 0 24 24"><path d="M12 2.6v18.8"/><path d="M9.1 6.9L3.4 12l5.7 5.1z"/><path d="M14.9 6.9L20.6 12l-5.7 5.1z"/></svg>
-      </button>
-      <button class="wide turn" id="flipYBtn" title="Flip what you are holding top to bottom" aria-label="Flip vertically" disabled>
-        <svg viewBox="0 0 24 24"><path d="M2.6 12h18.8"/><path d="M6.9 9.1L12 3.4l5.1 5.7z"/><path d="M6.9 14.9L12 20.6l5.1-5.7z"/></svg>
-      </button>
-    </div>
-    <div class="grid4 binders" data-for="select">
-      <button class="wide turn" id="toBottomBtn" title="Send what you are holding to the bottom, under everything else" aria-label="Send to the bottom" disabled>
-        <svg viewBox="0 0 24 24"><path d="M5.2 20.2h13.6"/><path d="M12 3.8v11.8"/><path d="M6.8 10.4l5.2 5.2 5.2-5.2"/></svg>
-      </button>
-      <button class="wide turn" id="downOneBtn" title="Send what you are holding down one, under the next thing below it" aria-label="Send down one" disabled>
-        <svg viewBox="0 0 24 24"><path d="M12 4.6v13.8"/><path d="M6.8 13.2l5.2 5.2 5.2-5.2"/></svg>
-      </button>
-      <button class="wide turn" id="upOneBtn" title="Bring what you are holding up one, over the next thing above it" aria-label="Bring up one" disabled>
-        <svg viewBox="0 0 24 24"><path d="M12 19.4V5.6"/><path d="M6.8 10.8L12 5.6l5.2 5.2"/></svg>
-      </button>
-      <button class="wide turn" id="toTopBtn" title="Bring what you are holding to the top, over everything else" aria-label="Bring to the top" disabled>
-        <svg viewBox="0 0 24 24"><path d="M5.2 3.8h13.6"/><path d="M12 20.2V8.4"/><path d="M6.8 13.6L12 8.4l5.2 5.2"/></svg>
-      </button>
-    </div>
-    <div class="grid3 binders" data-for="select">
-      <button class="wide" id="cutBtn" title="Cut what you are holding — ⌘X" disabled>Cut</button>
-      <button class="wide" id="copyBtn" title="Copy what you are holding — ⌘C" disabled>Copy</button>
-      <button class="wide" id="pasteBtn" title="Paste — ⌘V" disabled>Paste</button>
-    </div>
-    <button class="wide toggle" data-toggle="filled" id="filledBtn" data-for="circle rect">
-      <span class="tick"></span><span>Filled shapes</span>
-    </button>
-    <div class="row slide" id="smoothRow" data-for="pencil" title="How far a stroke is tidied when you let go — 0 keeps it exactly as drawn">
-      <span class="mono tiny">Smooth</span>
-      <input type="range" id="smooth" min="0" max="100" step="1" value="25" aria-label="Pencil smoothing">
-      <span class="mono num" id="smoothVal">25</span>
-    </div>
-    <div id="warpControls" data-for="warp">
-      <div class="row slide">
-        <span class="mono tiny">Amount</span>
-        <input type="range" id="warpAmount" min="0" max="100" step="1" value="100" aria-label="Warp amount">
-        <span class="mono num" id="warpAmountVal">100</span>
+    <!-- The tool in hand's own settings, boxed and named for it. Each says
+         in data-for which tools it belongs to; setTool shows the right ones
+         and hides the box when a tool has none. -->
+    <div class="card" id="toolCard">
+      <div class="card-title" id="toolCardTitle">Tool</div>
+      <button class="wide toggle" data-toggle="snap" data-for="select line curve circle rect" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
+      <div class="row slide" id="widthRow" data-for="select pencil line curve circle rect" title="How heavy a stroke is drawn — and, with something held, every stroke held">
+        <span class="mono tiny">Width</span>
+        <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke weight">
+        <span class="mono num" id="widthVal">9</span>
       </div>
-      <div class="sub-row">
-        <span class="mono tiny">Anchors</span>
-        <div class="modes" id="warpRepeat">
-          <button data-repeat="plane" title="Each anchor sits once, where it was put — a lens over the pattern">Plane</button>
-          <button data-repeat="tile" title="Each anchor sits in every square, turned with it — still a tiling">Tile</button>
-        </div>
+      <button class="wide toggle" data-toggle="filled" id="filledBtn" data-for="circle rect">
+        <span class="tick"></span><span>Filled shapes</span>
+      </button>
+      <div class="row slide" id="smoothRow" data-for="pencil" title="How far a stroke is tidied when you let go — 0 keeps it exactly as drawn">
+        <span class="mono tiny">Smooth</span>
+        <input type="range" id="smooth" min="0" max="100" step="1" value="25" aria-label="Pencil smoothing">
+        <span class="mono num" id="smoothVal">25</span>
       </div>
-      <div class="sub-row">
-        <span class="mono tiny">Ink</span>
-        <div class="modes" id="warpInk">
-          <button data-ink="bend" title="Strokes follow the warp and keep the width they were given">Bends</button>
-          <button data-ink="swell" title="Strokes are warped as the area they cover, so a bulge thickens them too">Swells</button>
-        </div>
+      <div class="grid2 binders" data-for="select">
+        <button class="wide" id="groupBtn" title="Bind what you are holding into one thing — G or ⌘G" disabled>Group</button>
+        <button class="wide" id="ungroupBtn" title="Let it loose again — U or ⇧⌘G" disabled>Ungroup</button>
       </div>
-      <p class="note" id="warpNone"></p>
-      <div id="warpAnchor" hidden>
+      <div class="grid4 binders" data-for="select">
+        <button class="wide turn" id="turnLeftBtn" title="Turn what you are holding 45° anticlockwise" aria-label="Turn anticlockwise" disabled>
+          <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        </button>
+        <button class="wide turn" id="turnRightBtn" title="Turn what you are holding 45° clockwise" aria-label="Turn clockwise" disabled>
+          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+        <button class="wide turn" id="flipXBtn" title="Flip what you are holding left to right" aria-label="Flip horizontally" disabled>
+          <svg viewBox="0 0 24 24"><path d="M12 2.6v18.8"/><path d="M9.1 6.9L3.4 12l5.7 5.1z"/><path d="M14.9 6.9L20.6 12l-5.7 5.1z"/></svg>
+        </button>
+        <button class="wide turn" id="flipYBtn" title="Flip what you are holding top to bottom" aria-label="Flip vertically" disabled>
+          <svg viewBox="0 0 24 24"><path d="M2.6 12h18.8"/><path d="M6.9 9.1L12 3.4l5.1 5.7z"/><path d="M6.9 14.9L12 20.6l5.1-5.7z"/></svg>
+        </button>
+      </div>
+      <div class="grid4 binders" data-for="select">
+        <button class="wide turn" id="toBottomBtn" title="Send what you are holding to the bottom, under everything else" aria-label="Send to the bottom" disabled>
+          <svg viewBox="0 0 24 24"><path d="M5.2 20.2h13.6"/><path d="M12 3.8v11.8"/><path d="M6.8 10.4l5.2 5.2 5.2-5.2"/></svg>
+        </button>
+        <button class="wide turn" id="downOneBtn" title="Send what you are holding down one, under the next thing below it" aria-label="Send down one" disabled>
+          <svg viewBox="0 0 24 24"><path d="M12 4.6v13.8"/><path d="M6.8 13.2l5.2 5.2 5.2-5.2"/></svg>
+        </button>
+        <button class="wide turn" id="upOneBtn" title="Bring what you are holding up one, over the next thing above it" aria-label="Bring up one" disabled>
+          <svg viewBox="0 0 24 24"><path d="M12 19.4V5.6"/><path d="M6.8 10.8L12 5.6l5.2 5.2"/></svg>
+        </button>
+        <button class="wide turn" id="toTopBtn" title="Bring what you are holding to the top, over everything else" aria-label="Bring to the top" disabled>
+          <svg viewBox="0 0 24 24"><path d="M5.2 3.8h13.6"/><path d="M12 20.2V8.4"/><path d="M6.8 13.6L12 8.4l5.2 5.2"/></svg>
+        </button>
+      </div>
+      <div class="grid3 binders" data-for="select">
+        <button class="wide" id="cutBtn" title="Cut what you are holding — ⌘X" disabled>Cut</button>
+        <button class="wide" id="copyBtn" title="Copy what you are holding — ⌘C" disabled>Copy</button>
+        <button class="wide" id="pasteBtn" title="Paste — ⌘V" disabled>Paste</button>
+      </div>
+      <div id="warpControls" data-for="warp">
         <div class="row slide">
-          <span class="mono tiny">Bulge</span>
-          <input type="range" id="warpBulge" min="-100" max="100" step="1" value="50" aria-label="Bulge">
-          <span class="mono num" id="warpBulgeVal">50</span>
+          <span class="mono tiny">Amount</span>
+          <input type="range" id="warpAmount" min="0" max="100" step="1" value="100" aria-label="Warp amount">
+          <span class="mono num" id="warpAmountVal">100</span>
         </div>
-        <div class="row slide">
-          <span class="mono tiny">Twirl</span>
-          <input type="range" id="warpTwirl" min="-100" max="100" step="1" value="0" aria-label="Twirl">
-          <span class="mono num" id="warpTwirlVal">0</span>
+        <div class="sub-row">
+          <span class="mono tiny">Anchors</span>
+          <div class="modes" id="warpRepeat">
+            <button data-repeat="plane" title="Each anchor sits once, where it was put — a lens over the pattern">Plane</button>
+            <button data-repeat="tile" title="Each anchor sits in every square, turned with it — still a tiling">Tile</button>
+          </div>
         </div>
-        <div class="row slide">
-          <span class="mono tiny">Radius</span>
-          <input type="range" id="warpRadius" min="10" max="2000" step="5" value="400" aria-label="Radius">
-          <span class="mono num" id="warpRadiusVal">400</span>
+        <div class="sub-row">
+          <span class="mono tiny">Ink</span>
+          <div class="modes" id="warpInk">
+            <button data-ink="bend" title="Strokes follow the warp and keep the width they were given">Bends</button>
+            <button data-ink="swell" title="Strokes are warped as the area they cover, so a bulge thickens them too">Swells</button>
+          </div>
         </div>
-        <button class="wide" id="warpRemove" title="Remove the anchor in hand — Delete">Remove anchor</button>
+        <p class="note" id="warpNone"></p>
+        <!-- The anchor held, apart from the warp as a whole. -->
+        <div class="subgroup" id="warpAnchor" hidden>
+          <div class="card-title">Anchor</div>
+          <div class="row slide">
+            <span class="mono tiny">Bulge</span>
+            <input type="range" id="warpBulge" min="-100" max="100" step="1" value="50" aria-label="Bulge">
+            <span class="mono num" id="warpBulgeVal">50</span>
+          </div>
+          <div class="row slide">
+            <span class="mono tiny">Twirl</span>
+            <input type="range" id="warpTwirl" min="-100" max="100" step="1" value="0" aria-label="Twirl">
+            <span class="mono num" id="warpTwirlVal">0</span>
+          </div>
+          <div class="row slide">
+            <span class="mono tiny">Radius</span>
+            <input type="range" id="warpRadius" min="10" max="2000" step="5" value="400" aria-label="Radius">
+            <span class="mono num" id="warpRadiusVal">400</span>
+          </div>
+          <button class="wide" id="warpRemove" title="Remove the anchor in hand — Delete">Remove anchor</button>
+        </div>
       </div>
     </div>
   </section>
@@ -201,62 +214,108 @@
     </div>
 
     <div class="swatches" id="swatches"></div>
-    <div class="recent" id="recent" aria-label="Recently mixed"></div>
+    <div class="recent" id="recent" aria-label="Recently used" title="Recently used — ink that has been put down on the drawing, newest first"></div>
+  </section>
 
-    <div class="mixer">
-      <span class="swatch-preview"><span class="well chk"><i id="mixInk"></i></span></span>
-      <input type="text" id="hexInput" class="mono hex" spellcheck="false" autocomplete="off" maxlength="9" aria-label="Hex colour" placeholder="#rrggbbaa">
-      <label class="pick" title="Choose a colour from the system picker">
-        <input type="color" id="hexPick" aria-label="Colour picker">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8z" fill="currentColor" stroke="none"/></svg>
-      </label>
-      <button class="mini drop" id="dropBtn" title="Eyedropper — click the drawing to take the colour under the pointer — I" aria-label="Eyedropper">
-        <!-- Bootstrap Icons "eyedropper", MIT -->
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM2 12.707l7-7L10.293 7l-7 7H2z"/></svg>
-      </button>
-      <button class="mini add" id="addSwatch" title="Add this colour to the palette" aria-label="Add colour">+</button>
-    </div>
-
-    <div class="row slide">
-      <span class="mono tiny">Alpha</span>
-      <input type="range" id="alpha" min="1" max="100" step="1" value="100" aria-label="Opacity">
-      <span class="mono num" id="alphaVal">100</span>
-    </div>
-    <div class="row slide">
-      <span class="mono tiny">Width</span>
-      <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke weight">
-      <span class="mono num" id="widthVal">9</span>
-    </div>
+  <!-- The colour in hand: flat, or a gradient between two ends. -->
+  <section class="panel">
+    <div class="label"><span>Ink</span><i></i></div>
 
     <button class="wide toggle" id="gradOn" title="Fade the ink from one colour to another"><span class="tick"></span><span>Gradient</span></button>
-    <div class="grad-body" id="gradBody" hidden>
+
+    <div id="inkFlat">
       <div class="mixer">
-        <span class="swatch-preview"><span class="well chk"><i id="gradInk"></i></span></span>
-        <input type="text" id="gradHex" class="mono hex" spellcheck="false" autocomplete="off" maxlength="9" aria-label="Colour it fades to" placeholder="#rrggbbaa">
-        <label class="pick" title="Choose the colour it fades to">
-          <input type="color" id="gradPick" aria-label="End colour picker">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8z" fill="currentColor" stroke="none"/></svg>
-        </label>
+        <label class="swatch-preview well-pick" title="The ink in hand — click for the system colour picker"><span class="well chk"><i id="mixInk"></i></span><input type="color" id="hexPick" aria-label="Colour picker"></label>
+        <input type="text" id="hexInput" class="mono hex" spellcheck="false" autocomplete="off" maxlength="9" aria-label="Hex colour" placeholder="#rrggbbaa">
+        <button class="mini drop" id="dropBtn" title="Eyedropper — click the drawing to take the colour under the pointer — I" aria-label="Eyedropper">
+          <!-- Bootstrap Icons "eyedropper", MIT -->
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM2 12.707l7-7L10.293 7l-7 7H2z"/></svg>
+        </button>
+        <span class="ink-tools" id="inkTools">
+          <button class="mini add" id="addSwatch" title="Add this ink to the palette" aria-label="Add to the palette">+</button>
+        </span>
       </div>
-      <div class="row slide">
+      <div class="row slide" id="alphaRow">
         <span class="mono tiny">Alpha</span>
-        <input type="range" id="gradAlpha" min="0" max="100" step="1" value="100" aria-label="Opacity of the colour it fades to">
-        <span class="mono num" id="gradAlphaVal">100</span>
+        <input type="range" id="alpha" min="1" max="100" step="1" value="100" aria-label="Opacity">
+        <span class="mono num" id="alphaVal">100</span>
       </div>
-      <div class="row slide">
-        <span class="mono tiny">Angle</span>
-        <input type="range" id="gradAngle" min="0" max="355" step="5" value="90" aria-label="Gradient angle">
-        <span class="mono num" id="gradAngleVal">90</span>
+    </div>
+
+    <div class="grad-body" id="gradBody" hidden>
+      <!-- The sweep as a whole: where it runs, and how. The dial shows it,
+           so there is no strip of it as well. -->
+      <div class="card" id="gradSweep">
+        <div class="card-title">Sweep
+          <span class="card-tools">
+            <button class="mini swap" id="gradSwap" title="Swap the two ends" aria-label="Swap the two ends">
+              <svg viewBox="0 0 24 24"><path d="M4.5 8.5h14.5"/><path d="M15.5 5l3.5 3.5-3.5 3.5"/><path d="M19.5 15.5H5"/><path d="M8.5 12L5 15.5 8.5 19"/></svg>
+            </button>
+            <span class="ink-tools" id="gradTools"></span>
+          </span>
+        </div>
+        <div class="sweep-set">
+          <!-- The angle, turned by hand: the sweep as it will fall, with a
+               hand pointing the way it runs. -->
+          <div class="dial chk" id="gradDial" tabindex="0" role="slider" aria-label="Angle of the sweep — drag, or step it with the arrow keys" aria-valuemin="0" aria-valuemax="359" aria-valuenow="90" title="Drag to turn the sweep — Alt holds it to 45° · arrow keys step it, Shift by 45°">
+            <i id="gradDialInk"></i>
+            <svg viewBox="-30 -30 60 60" aria-hidden="true">
+              <g id="gradDialHand" transform="rotate(90)">
+                <g class="shade"><path d="M-19 0H17"/><path d="M10.5 -6.5L18.5 0 10.5 6.5"/><circle cx="-19" cy="0" r="2.6"/></g>
+                <g class="hand"><path d="M-19 0H17"/><path d="M10.5 -6.5L18.5 0 10.5 6.5"/><circle cx="-19" cy="0" r="2.6"/></g>
+              </g>
+            </svg>
+          </div>
+          <div class="sweep-fields">
+            <div class="sub-row">
+              <span class="mono tiny">Angle</span>
+              <span class="angle-field">
+                <input type="number" id="gradAngle" class="mono hex" min="0" max="359" step="5" value="90" aria-label="Angle of the sweep, in degrees clockwise from east">
+                <span class="mono tiny">deg</span>
+              </span>
+            </div>
+            <div class="sub-row">
+              <span class="mono tiny">Across</span>
+              <div class="modes" id="gradAnchor">
+                <button data-anchor="shape" title="The sweep runs across each mark's own bounds, so every copy of it looks the same">Mark</button>
+                <button data-anchor="tile" title="The sweep runs across the square, so a whole figure fades together — and still repeats exactly">Tile</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="sub-row">
-        <span class="mono tiny">Across</span>
-        <div class="modes" id="gradAnchor">
-          <button data-anchor="shape" title="The sweep runs across each mark's own bounds, so every copy of it looks the same">Mark</button>
-          <button data-anchor="tile" title="The sweep runs across the square, so a whole figure fades together — and still repeats exactly">Tile</button>
+      <!-- Each end, with everything that belongs to it. -->
+      <div class="card stop" id="gradStop0">
+        <div class="card-title">From</div>
+        <div class="mixer">
+          <label class="swatch-preview well-pick" id="gradWell0" title="The colour the sweep starts from — click for the system colour picker"><span class="well chk"><i></i></span><input type="color" id="gradPick0" aria-label="Colour the sweep starts from"></label>
+          <input type="text" id="gradHex0" class="mono hex" spellcheck="false" autocomplete="off" maxlength="9" aria-label="Hex of the colour the sweep starts from" placeholder="#rrggbbaa">
+          <button class="mini drop" id="gradDrop0" title="Take the colour the sweep starts from off the drawing" aria-label="Eyedropper for the start of the sweep">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM2 12.707l7-7L10.293 7l-7 7H2z"/></svg>
+          </button>
+        </div>
+        <div class="row slide">
+          <span class="mono tiny">Alpha</span>
+          <input type="range" id="gradAlpha0" min="0" max="100" step="1" value="100" aria-label="Opacity of the colour the sweep starts from">
+          <span class="mono num" id="gradAlphaVal0">100</span>
+        </div>
+      </div>
+      <div class="card stop" id="gradStop1">
+        <div class="card-title">To</div>
+        <div class="mixer">
+          <label class="swatch-preview well-pick" id="gradWell1" title="The colour the sweep fades to — click for the system colour picker"><span class="well chk"><i></i></span><input type="color" id="gradPick1" aria-label="Colour the sweep fades to"></label>
+          <input type="text" id="gradHex1" class="mono hex" spellcheck="false" autocomplete="off" maxlength="9" aria-label="Hex of the colour the sweep fades to" placeholder="#rrggbbaa">
+          <button class="mini drop" id="gradDrop1" title="Take the colour the sweep fades to off the drawing" aria-label="Eyedropper for the end of the sweep">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM2 12.707l7-7L10.293 7l-7 7H2z"/></svg>
+          </button>
+        </div>
+        <div class="row slide">
+          <span class="mono tiny">Alpha</span>
+          <input type="range" id="gradAlpha1" min="0" max="100" step="1" value="100" aria-label="Opacity of the colour the sweep fades to">
+          <span class="mono num" id="gradAlphaVal1">100</span>
         </div>
       </div>
     </div>
-
   </section>
 
   <section class="panel">

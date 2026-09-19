@@ -78,6 +78,40 @@
     return (normHex(hex) || '#17160f').slice(0, 7);
   }
 
+  /* The complement of a colour, whole: across the painter's wheel from it
+     — red and green, blue and orange, yellow and violet — rather than the
+     screen's, which pairs red with cyan and blue with yellow. The hue is
+     carried onto the red, yellow and blue wheel, turned half way round and
+     carried back, and the colour keeps its lightness and its strength. A
+     grey has no complement, so it gets the grey across from it, black to
+     white. A new gradient fades to it, so switching one on shows a sweep
+     at once. */
+  const SCREEN_HUE = [0, 35, 60, 120, 240, 285, 360];
+  const PAINT_HUE = [0, 60, 120, 180, 240, 300, 360];
+  function rehue(h, from, to) {
+    let k = 1;
+    while (h > from[k]) k++;
+    return to[k - 1] + ((h - from[k - 1]) / (from[k] - from[k - 1])) * (to[k] - to[k - 1]);
+  }
+  function complement(ink) {
+    const hex = rgbOf(ink);
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const hi = Math.max(...c), lo = Math.min(...c), d = hi - lo;
+    let out;
+    if (d < 40) out = c.map((v) => 255 - v);
+    else {
+      const [r, g, b] = c;
+      const hue = 60 * (hi === r ? ((g - b) / d + 6) % 6 : hi === g ? (b - r) / d + 2 : (r - g) / d + 4);
+      const h = rehue((rehue(hue, SCREEN_HUE, PAINT_HUE) + 180) % 360, PAINT_HUE, SCREEN_HUE);
+      // Back to channels with the same brightest and dullest as before.
+      out = [0, 8, 4].map((n) => {
+        const k = (n + h / 30) % 12;
+        return Math.round((hi + lo) / 2 - (d / 2) * Math.max(-1, Math.min(k - 3, 9 - k, 1)));
+      });
+    }
+    return '#' + out.map((v) => v.toString(16).padStart(2, '0')).join('');
+  }
+
   function alphaOf(hex) {
     const g = parseInk(hex);
     if (g) return alphaOf(g.stops[0]);
@@ -285,7 +319,7 @@
     smooth: 25,         // how far the pencil tidies a stroke, 0 to 100
     palette: BUILT_IN[0].name,
     palettes: [],       // the user's own named palettes
-    recent: [],         // ink mixed rather than picked, newest first
+    recent: [],         // ink used on the drawing, newest first
     filled: false,
     grid: true,
     arrows: false,      // an arrow per square, showing the turn it carries
@@ -302,7 +336,7 @@
   };
 
   /* What a drawing starts as, kept so *New* can put it all back. Only
-     what belongs to the drawing: the palettes and the recently mixed
+     what belongs to the drawing: the palettes and the recently used
      strip are the table's, and survive it. */
   const DEFAULTS = {
     color: state.color,
@@ -1859,6 +1893,7 @@
   function commit(shape) {
     pushStep();
     state.shapes = state.shapes.concat([shape]);
+    noteUsed([shape], true);
     afterChange();
   }
 
@@ -1867,6 +1902,7 @@
      of the alpha would need forty presses of undo to take back. */
   function replaceShapes(next, merge) {
     if (!merge) pushStep();
+    noteUsed(changedMarks(state.shapes, next));
     state.shapes = next;
     afterChange();
   }
@@ -2044,6 +2080,9 @@
         break;
       case 'fill':
         doFill(w);
+        // One click, one deliberate colouring: written down at once, like
+        // a mark put down, whether it made an area or recoloured one.
+        usedNow();
         mode = null;
         return true;
       case 'erase':
@@ -3505,6 +3544,7 @@
       region.group = gid;
       pushStep();
       state.shapes = next.concat([region]);
+      noteUsed([region], true);
       select([]);
       afterChange();
       const n = free.length || walls.length;
@@ -3861,8 +3901,8 @@
     }
     if (k === 'i') { armDropper(!dropper); return; }
     if (TOOL_KEYS[k]) { setTool(TOOL_KEYS[k]); return; }
-    if (k >= '1' && k <= '9') { setColor(currentColors()[+k - 1]); return; }
-    if (k === '0') { setColor(currentColors()[9]); return; }
+    if (k >= '1' && k <= '9') { takeSwatch(currentColors()[+k - 1]); return; }
+    if (k === '0') { takeSwatch(currentColors()[9]); return; }
     if (k === '[') { setWidth(state.width - (state.width > 12 ? 4 : 1)); return; }
     if (k === ']') { setWidth(state.width + (state.width >= 12 ? 4 : 1)); return; }
     if (k === 'g') { groupPicked(); return; }
@@ -3923,14 +3963,19 @@
     canvas.classList.remove('grabbable');
     requestDraw();       // the anchors show only while the warp tool is up
     for (const b of document.querySelectorAll('.tool')) b.classList.toggle('on', b.dataset.tool === tool);
-    /* Under the tools, the controls of the tool in hand and no others:
-       snapping for the tools that snap, the buttons that work on what is
-       held for Select, Filled shapes for Circle and Rect, Smooth for the
-       pencil, and the warp for Warp. Each says in `data-for` which tools it
-       belongs to. */
+    /* Under the tools, in a box named for the tool in hand, its own
+       controls and no others: snapping for the tools that snap, the width
+       for the tools that draw strokes and for Select, which sets it on what
+       it holds; the buttons that work on what is held for Select, Filled
+       shapes for Circle and Rect, Smooth for the pencil, and the warp for
+       Warp. Each says in `data-for` which tools it belongs to, and a tool
+       with none has no box. */
     for (const el of document.querySelectorAll('[data-for]')) {
       el.hidden = !el.dataset.for.split(' ').includes(tool);
     }
+    const toolCard = document.getElementById('toolCard');
+    toolCard.hidden = ![...toolCard.querySelectorAll('[data-for]')].some((el) => !el.hidden);
+    document.getElementById('toolCardTitle').textContent = document.querySelector(`.tool[data-tool="${tool}"] em`).textContent;
     setHint(HINTS[tool] || HINTS.base);
     saveSoon();
   }
@@ -3939,9 +3984,7 @@
     const hex = normInk(raw);
     if (!hex) return;
     state.color = hex;
-    for (const b of document.querySelectorAll('.swatch')) b.classList.toggle('on', b.dataset.color === hex);
     syncMixer(quiet);
-    rememberSoon();
     if (!inkOnly && picked.length) {
       const swap = new Map();
       // Every mark held, not only the ones clicked: a group is held whole.
@@ -3960,9 +4003,12 @@
      that is actually in the drawing. */
   let dropper = false;
 
-  function armDropper(on) {
+  function armDropper(on, btn) {
     dropper = on;
-    document.getElementById('dropBtn').classList.toggle('armed', on);
+    // With a gradient in hand, the eyedropper that lights is the one on the
+    // end it is going to fill.
+    const lit = btn || (parseInk(state.color) ? ends[gradEnd].drop : document.getElementById('dropBtn'));
+    for (const b of document.querySelectorAll('.mini.drop')) b.classList.toggle('armed', on && b === lit);
     canvas.classList.toggle('dropping', on);
     if (on) setHint('Click anywhere in the drawing to take its colour · Esc to stop', true);
     else setHint(HINTS[state.tool] || HINTS.base);
@@ -3981,7 +4027,7 @@
       const hex = !border && mark.layer === 'stroke' && !mark.filled && mark.fillColor
         ? mark.fillColor
         : mark.color;
-      setColor(hex);
+      takeInk(hex);
       return flash(`Took ${hex}`);
     }
     const x = clamp(Math.round(s.x * dpr), 0, canvas.width - 1);
@@ -3989,7 +4035,7 @@
     const px = ctx.getImageData(x, y, 1, 1).data;
     if (px[3] < 8) return flash('Nothing there to take');
     const hex = '#' + [px[0], px[1], px[2]].map((v) => v.toString(16).padStart(2, '0')).join('');
-    setColor(hex);
+    takeInk(hex);
     flash(`Took ${hex} off the paper`);
   }
 
@@ -4188,12 +4234,12 @@
         // `closest`, not the class of the target itself: the cross is
         // small and anything that ends up inside it still counts.
         if (e.target.closest('.kill')) { dropSwatch(idx); return; }
-        setColor(hex);
+        takeSwatch(hex);
       });
       dragSwatch(b, hex, 'palette');
       swatchWrap.appendChild(b);
     });
-    for (const b of swatchWrap.children) b.classList.toggle('on', b.dataset.color === state.color);
+    markSwatches();
   }
 
   /* The ten slots under the palette. They are drawn whether or not there
@@ -4217,7 +4263,7 @@
         + '<i class="kill" title="Take this out">\u00d7</i>';
       b.addEventListener('click', (e) => {
         if (e.target.closest('.kill')) { dropRecent(i); return; }
-        setColor(ink);
+        takeSwatch(ink);
       });
       dragSwatch(b, ink, 'recent');
       recentWrap.appendChild(b);
@@ -4275,8 +4321,7 @@
   const clearCarets = () => {
     showCaret(swatchWrap, null);
     showCaret(recentWrap, null);
-    swatchWrap.classList.remove('drop');
-    recentWrap.classList.remove('drop');
+    for (const el of [swatchWrap, recentWrap].concat(ends.map((e) => e.box))) el.classList.remove('drop');
   };
 
   function dropSwatches(el, mine, put) {
@@ -4354,14 +4399,18 @@
     saveSoon();
   }
 
-  const syncRecent = () => {
-    for (const b of recentWrap.children) b.classList.toggle('on', b.dataset.color === state.color);
-  };
+  const syncRecent = () => markSwatches();
 
-  /* Ink the palette does not already hold, newest first and one of each.
-     Recorded a moment after it settles rather than on the spot: a drag
-     of the alpha passes through forty colours on its way to the one that
-     was wanted, and none of the forty is worth a slot. */
+  // The swatch of the ink in hand.
+  function markSwatches() {
+    for (const b of document.querySelectorAll('.swatch')) {
+      b.classList.toggle('on', b.dataset.color === state.color);
+    }
+  }
+
+  /* Ink the palette does not already hold, newest first and one of each —
+     put there once it has been used on the drawing (see noteUsed), or by
+     hand when a colour is dragged in. */
   let rememberTimer = 0;
   function remember(ink, asked) {
     if (!ink) return;
@@ -4374,20 +4423,69 @@
     buildRecent();
     saveSoon();
   }
-  function rememberSoon() {
+  /* The strip keeps ink that has been used on the drawing — a mark drawn
+     in it, an area filled with it, a mark recoloured to it — and not every
+     colour the ink passes through on its way to one: a hex typed, a colour
+     dimmed, a gradient set up, a colour taken with the eyedropper waits
+     until it has been put down on something. A new mark, or a click of the
+     fill tool, is written down the moment it is made: its colour is the
+     one that was wanted. A mark recoloured otherwise waits until things
+     settle, and is written down only if it
+     still wears the colour then — a drag of the alpha, or of the system
+     picker, across something held passes through forty colours, and only
+     the one it stops at is on a mark by then. Undo, redo and opening a
+     drawing do not come through here, so bringing ink back is not using
+     it. */
+  let usedSoon = new Set();
+  function noteUsed(marks, now) {
+    for (const sh of marks) {
+      if (sh.color) usedSoon.add(sh.color);
+      if (sh.fillColor) usedSoon.add(sh.fillColor);
+    }
+    if (!usedSoon.size) return;
     clearTimeout(rememberTimer);
-    rememberTimer = setTimeout(() => remember(state.color), 700);
+    if (now) usedNow();
+    else rememberTimer = setTimeout(usedNow, 700);
+  }
+  function usedNow() {
+    clearTimeout(rememberTimer);
+    if (!usedSoon.size) return;
+    const onPaper = new Set();
+    for (const sh of state.shapes) {
+      if (sh.color) onPaper.add(sh.color);
+      if (sh.fillColor) onPaper.add(sh.fillColor);
+    }
+    const used = [...usedSoon].filter((ink) => onPaper.has(ink));
+    usedSoon = new Set();
+    for (const ink of used) remember(ink);
   }
 
-  // The mixer always shows the ink in hand — except the hex field while
-  // it is being typed into, which would fight the cursor.
+  // The marks in `next` that are new, or wear a colour they did not before.
+  function changedMarks(prev, next) {
+    const was = new Map(prev.map((sh) => [sh.id, sh]));
+    return next.filter((sh) => {
+      const old = was.get(sh.id);
+      return !old || old.color !== sh.color || old.fillColor !== sh.fillColor;
+    });
+  }
+
+  /* The mixer always shows the ink in hand — except the hex field while
+     it is being typed into, which would fight the cursor. With a gradient
+     in hand the flat mixer and its alpha give way to the gradient's own,
+     and the + goes with the ink, beside the sweep: it keeps the whole of
+     it. Each end of the sweep has an eyedropper of its own. */
   function syncMixer(quiet) {
     const hex = state.color;
     const g = parseInk(hex);
     const a = alphaOf(hex);
     mixPreview.style.background = inkCss(hex);
     hexPick.value = rgbOf(hex);
+    document.getElementById('inkFlat').hidden = !!g;
+    const tools = document.getElementById(g ? 'gradTools' : 'inkTools');
+    const add = document.getElementById('addSwatch');
+    if (add.parentNode !== tools) tools.append(add);
     syncGrad(g, quiet);
+    markSwatches();
     alphaInput.value = Math.round((a / 255) * 100);
     alphaVal.textContent = alphaInput.value;
     if (!quiet && document.activeElement !== hexInput) {
@@ -4475,7 +4573,7 @@
       return flash(`“${was}” is now “${pal.name}”`);
     }
     // Empty: a new palette is somewhere to put colours, not a copy of
-    // the ones already to hand. `+` fills it, and the ten recently mixed
+    // the ones already to hand. `+` fills it, and the ten recently used
     // slots underneath are where they come from.
     const pal = { name: freeName(name), colors: [] };
     state.palettes.push(pal);
@@ -4552,14 +4650,28 @@
 
   const gradBody = document.getElementById('gradBody');
   const gradOn = document.getElementById('gradOn');
-  const gradInk = document.getElementById('gradInk');
-  const gradHex = document.getElementById('gradHex');
-  const gradPick = document.getElementById('gradPick');
-  const gradAlpha = document.getElementById('gradAlpha');
-  const gradAlphaVal = document.getElementById('gradAlphaVal');
   const gradAngle = document.getElementById('gradAngle');
-  const gradAngleVal = document.getElementById('gradAngleVal');
+  const gradDial = document.getElementById('gradDial');
   const gradAnchor = document.getElementById('gradAnchor');
+
+  /* Each end of the sweep keeps everything that belongs to it together:
+     its well, its hex, the system picker and its own alpha. They used to
+     be scattered — the start's in the flat mixer at the top with its alpha
+     under it, the end's in a row further down, the width slider between —
+     so no one end could be seen whole. */
+  const ends = [0, 1].map((i) => ({
+    box: document.getElementById(`gradStop${i}`),
+    well: document.getElementById(`gradWell${i}`),
+    hex: document.getElementById(`gradHex${i}`),
+    pick: document.getElementById(`gradPick${i}`),
+    drop: document.getElementById(`gradDrop${i}`),
+    alpha: document.getElementById(`gradAlpha${i}`),
+    alphaVal: document.getElementById(`gradAlphaVal${i}`),
+  }));
+  let gradEnd = 1;     // the end whose eyedropper is out
+
+  // The two ends of a sweep, whatever a file may carry between them.
+  const endsOf = (g) => [g.stops[0], g.stops[g.stops.length - 1]];
 
   /* What the sweep was last set to. Switching the gradient off leaves
      only the colour it started from, so without this, switching it back
@@ -4572,18 +4684,24 @@
     gradOn.classList.toggle('on', !!g);
     gradBody.hidden = !g;
     if (!g) return;
-    const end = g.stops[g.stops.length - 1];
-    gradInk.style.background = end;
-    gradPick.value = rgbOf(end);
-    gradAlpha.value = Math.round((alphaOf(end) / 255) * 100);
-    gradAlphaVal.textContent = gradAlpha.value;
-    gradAngle.value = g.deg;
-    gradAngleVal.textContent = g.deg;
+    const two = endsOf(g);
+    ends.forEach((e, i) => {
+      const c = two[i];
+      e.well.querySelector('i').style.background = c;
+      e.pick.value = rgbOf(c);
+      e.alpha.value = Math.round((alphaOf(c) / 255) * 100);
+      e.alphaVal.textContent = e.alpha.value;
+      if (!quiet && document.activeElement !== e.hex) {
+        e.hex.value = c;
+        e.hex.classList.remove('bad');
+      }
+    });
+    if (document.activeElement !== gradAngle) gradAngle.value = g.deg;
+    // The dial: the sweep as it will fall, CSS's angle being ours a quarter on.
+    document.getElementById('gradDialInk').style.background = `linear-gradient(${g.deg + 90}deg, ${two.join(', ')})`;
+    document.getElementById('gradDialHand').setAttribute('transform', `rotate(${g.deg})`);
+    gradDial.setAttribute('aria-valuenow', String(g.deg));
     for (const b of gradAnchor.children) b.classList.toggle('on', b.dataset.anchor === g.anchor);
-    if (!quiet && document.activeElement !== gradHex) {
-      gradHex.value = end;
-      gradHex.classList.remove('bad');
-    }
   }
 
   // Change one part of the sweep and leave the rest as it was.
@@ -4593,52 +4711,167 @@
     setColor(gradText({ ...g, ...patch }));
   }
 
+  // One end of the sweep set, the other left as it was.
+  function setEnd(i, c, quiet) {
+    const g = parseInk(state.color);
+    if (!g) return;
+    const stops = g.stops.slice();
+    stops[i ? stops.length - 1 : 0] = c;
+    setColor(gradText({ ...g, stops }), quiet);
+  }
+
+  /* A colour taken with the eyedropper. With a gradient in hand it fills
+     the end whose eyedropper it was, and the sweep stays. */
+  function takeInk(value) {
+    const ink = normInk(value);
+    if (!ink) return;
+    if (parseInk(state.color) && !parseInk(ink)) setEnd(gradEnd, ink);
+    else setColor(ink);
+  }
+
+  /* A swatch — from the palette, the recent strip or a number key — is
+     the ink it shows, whole: a plain colour puts the gradient away and a
+     gradient brings it out, and the switch follows either way. The sweep
+     put away is remembered, so switching back on returns it. A swatch
+     goes into one end of a sweep by being dragged there. */
+  function takeSwatch(value) {
+    const ink = normInk(value);
+    if (ink) setColor(ink);
+  }
+
   gradOn.addEventListener('click', () => {
     const g = parseInk(state.color);
     // Switching it off keeps the colour it started from, so the ink does
     // not jump. Switching it on comes back to the sweep that was there
-    // before, or — the first time — runs from the ink in hand to the
-    // same colour again, so nothing changes on the paper until the far
-    // stop is set to something.
+    // before, or — the first time — runs from the ink in hand, at full
+    // strength, to its complement, also at full strength, so there is a
+    // sweep to see the moment it is switched on.
     if (g) return setColor(g.stops[0]);
     const was = lastGrad;
     setColor(gradText({
       deg: was ? was.deg : 90,
       anchor: was ? was.anchor : 'shape',
       // The near stop is the ink in hand: that is what the switch was
-      // showing while the gradient was off, and it may have been changed.
-      stops: [state.color].concat(was ? was.stops.slice(1) : [state.color]),
+      // showing while the gradient was off, and it may have been changed
+      // since.
+      stops: was
+        ? [state.color].concat(was.stops.slice(1))
+        : [rgbOf(state.color), complement(state.color)],
     }));
   });
 
-  gradHex.addEventListener('input', () => {
-    const g = parseInk(state.color);
-    const hex = normHex(gradHex.value);
-    gradHex.classList.toggle('bad', !hex && gradHex.value.trim() !== '');
-    if (!g || !hex) return;
-    editGrad({ stops: g.stops.slice(0, -1).concat([hex]) });
+  ends.forEach((e, i) => {
+    // A plain swatch dragged from either strip onto an end fills it: the
+    // way a sweep is mixed from the palette, now that a click on a swatch
+    // takes its ink whole.
+    const fills = () => dragging && !parseInk(dragging.ink) && parseInk(state.color);
+    e.box.addEventListener('dragover', (ev) => {
+      if (!fills()) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'copy';
+      e.box.classList.add('drop');
+    });
+    e.box.addEventListener('dragleave', (ev) => {
+      if (!e.box.contains(ev.relatedTarget)) e.box.classList.remove('drop');
+    });
+    e.box.addEventListener('drop', (ev) => {
+      if (!fills()) return;
+      ev.preventDefault();
+      e.box.classList.remove('drop');
+      setEnd(i, dragging.ink);
+    });
+    e.drop.addEventListener('click', () => {
+      gradEnd = i;
+      armDropper(!(dropper && e.drop.classList.contains('armed')), e.drop);
+    });
+    e.hex.addEventListener('input', () => {
+      const hex = normHex(e.hex.value);
+      e.hex.classList.toggle('bad', !hex && e.hex.value.trim() !== '');
+      if (hex) setEnd(i, hex, true);
+    });
+    e.hex.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); e.hex.blur(); }
+    });
+    e.hex.addEventListener('blur', () => { e.hex.classList.remove('bad'); syncMixer(); });
+    e.pick.addEventListener('input', () => {
+      const g = parseInk(state.color);
+      if (g) setEnd(i, withAlpha(e.pick.value, alphaOf(endsOf(g)[i])));
+    });
+    /* Either end may fade all the way to nothing — a fade that stops just
+       short leaves a visible edge where it ends — but not both at once,
+       which would be ink no one could find again. */
+    e.alpha.addEventListener('input', () => {
+      const g = parseInk(state.color);
+      if (!g) return;
+      const two = endsOf(g);
+      let v = +e.alpha.value;
+      if (v === 0 && alphaOf(two[1 - i]) === 0) v = 1;
+      setEnd(i, withAlpha(two[i], (v / 100) * 255));
+      sliderRun = true;
+    });
+    e.alpha.addEventListener('change', () => { sliderRun = false; });
   });
-  gradPick.addEventListener('input', () => {
+
+  // The two ends change places.
+  document.getElementById('gradSwap').addEventListener('click', () => {
     const g = parseInk(state.color);
     if (!g) return;
-    const end = g.stops[g.stops.length - 1];
-    editGrad({ stops: g.stops.slice(0, -1).concat([withAlpha(gradPick.value, alphaOf(end))]) });
+    setColor(gradText({ ...g, stops: g.stops.slice().reverse() }));
+    flash('Ends swapped');
   });
-  /* The far stop's own alpha. It may go all the way to nothing, unlike
-     the ink's — a fade that stops just short leaves a visible edge where
-     it ends, and the near stop is still there to find the mark by. */
-  gradAlpha.addEventListener('input', () => {
-    gradAlphaVal.textContent = gradAlpha.value;
-    const g = parseInk(state.color);
-    if (!g) return;
-    const a = (+gradAlpha.value / 100) * 255;
-    editGrad({ stops: g.stops.slice(0, -1).concat([withAlpha(g.stops[g.stops.length - 1], a)]) });
-    sliderRun = true;
-  });
+  // The degrees, typed. A field part way through being typed is left alone.
   gradAngle.addEventListener('input', () => {
-    gradAngleVal.textContent = gradAngle.value;
-    editGrad({ deg: +gradAngle.value });
+    const v = parseFloat(gradAngle.value);
+    if (!isFinite(v)) return;
+    editGrad({ deg: ((Math.round(v) % 360) + 360) % 360 });
     sliderRun = true;
+  });
+  gradAngle.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); gradAngle.blur(); }
+  });
+  gradAngle.addEventListener('blur', () => syncMixer());
+
+  /* The angle, turned by hand. Drag anywhere on the dial and the sweep
+     points from its middle to the pointer — five degrees at a time, or to
+     the nearest eighth with Alt, the way a line is held to 45°. A drag is
+     one step to undo, like a slider run. Focused, the arrow keys step it,
+     and are kept from nudging whatever is held on the plane as well. */
+  const dialAngle = (ev) => {
+    const r = gradDial.getBoundingClientRect();
+    const a = (Math.atan2(ev.clientY - (r.top + r.height / 2), ev.clientX - (r.left + r.width / 2)) * 180) / Math.PI;
+    const step = ev.altKey || ev.ctrlKey ? 45 : 5;
+    return (((Math.round(a / step) * step) % 360) + 360) % 360;
+  };
+  gradDial.addEventListener('pointerdown', (ev) => {
+    if (!parseInk(state.color)) return;
+    ev.preventDefault();
+    gradDial.focus();
+    gradDial.setPointerCapture(ev.pointerId);
+    gradDial.classList.add('turning');
+    sliderRun = false;
+    editGrad({ deg: dialAngle(ev) });
+    sliderRun = true;
+  });
+  gradDial.addEventListener('pointermove', (ev) => {
+    if (!gradDial.hasPointerCapture(ev.pointerId)) return;
+    const g = parseInk(state.color);
+    const deg = dialAngle(ev);
+    if (g && g.deg !== deg) editGrad({ deg });
+  });
+  const dialDone = () => { gradDial.classList.remove('turning'); sliderRun = false; };
+  gradDial.addEventListener('pointerup', dialDone);
+  gradDial.addEventListener('pointercancel', dialDone);
+  gradDial.addEventListener('keydown', (ev) => {
+    const way = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+    if (!way) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const g = parseInk(state.color);
+    if (!g) return;
+    const step = ev.shiftKey ? 45 : 5;
+    editGrad({ deg: (((Math.round(g.deg / step) + way) * step) % 360 + 360) % 360 });
   });
   gradAnchor.addEventListener('click', (e) => {
     const b = e.target.closest('[data-anchor]');
@@ -4704,7 +4937,7 @@
 
   // Letting go of any slider closes its run, so the next one is its own
   // step to undo.
-  for (const el of [alphaInput, document.getElementById('width'), gradAlpha, gradAngle]) {
+  for (const el of [alphaInput, document.getElementById('width'), gradAngle]) {
     el.addEventListener('change', () => { sliderRun = false; });
   }
   for (const b of document.querySelectorAll('[data-toggle]')) {

@@ -54,12 +54,19 @@ right out before letting go counts as finishing it.
 | **Erase** `E` | Click or drag across a mark to remove it. A border answers before the interior of the mark holding it, and before a fill, so a line drawn across a filled shape can still be got at — and a mark can be rubbed out by any of its ink, including the part that has run over a neighbouring square |
 | **Warp** `W` | Click the paper to drop an anchor, and the plane bends round it — see [Warp](#warp). Drag an anchor's dot to move it and the square on its rim to size it; `Delete` removes the anchor in hand. Dragging bare paper pans |
 
-Directly under the tools are the controls for the tool in hand, and no others:
-*Snap to grid and geometry* for the tools that snap — Select, Line, Arc, Circle
-and Rect; the group, turn, depth and clipboard buttons for Select, since they
-work on what it is holding; *Filled shapes* for Circle and Rect; *Smooth* for the
-pencil; and the warp's own controls for Warp. The fill and the eraser have
-none, and the space closes up. The keys work whichever tool is up — `S` still switches
+Directly under the tools is a box named for the tool in hand, holding its
+controls and no others: *Snap to grid and geometry* for the tools that snap —
+Select, Line, Arc, Circle and Rect; *Width* for the tools that draw strokes, and
+for Select, which sets it on everything held; the group, turn, depth and
+clipboard buttons for Select, since they work on what it is holding; *Filled
+shapes* for Circle and Rect; *Smooth* for the pencil; and the warp's own
+controls for Warp, with the anchor held set apart inside it. The fill and the
+eraser have none, and have no box.
+
+The same rule runs down the whole rail: controls that act on one thing are
+boxed together and named for it, so nothing reads as belonging to its
+neighbour. The colours to pick from are the **Palette**; the colour in hand is
+the **Ink**; how heavy a stroke is drawn is the tool's. The keys work whichever tool is up — `S` still switches
 snapping from the pencil.
 
 Straight geometry is stroked with **flat ends**, so a line stops exactly on
@@ -241,14 +248,17 @@ to carry across the seam.
 *Filled shapes* fills circles and rectangles instead of outlining them. It sits
 under the tools while Circle or Rect is in hand.
 
-**Recently mixed** is a strip of ten smaller slots under the palette. Ink you
-make rather than pick lands there on its own — a colour dimmed, a hex typed, a
-gradient built, anything taken with the eyedropper — newest first, one of each,
-and the eleventh pushes the oldest out. A colour already in the palette in hand
-is not recorded, since it is a click away as it is. It is written down a moment
-after the ink settles rather than the instant it changes: a drag of the alpha
-passes through forty colours on its way to the one that was wanted, and none of
-the forty is worth a slot. The empty slots are drawn, so the strip keeps its
+**Recently used** is a strip of ten smaller slots under the palette. Ink lands
+there when it is used on the drawing — a mark drawn in it, an area filled with
+it, a mark recoloured to it — newest first, one of each, and the eleventh pushes
+the oldest out. Mixing alone records nothing: a hex typed, a colour dimmed, a
+gradient set up or a colour taken with the eyedropper waits until it has been
+put down on something, and undoing or opening a drawing is not using the ink it
+brings back. A colour already in the palette in hand is not recorded, since it
+is a click away as it is. It is written down a moment after the drawing settles,
+and only if it is still on a mark by then: a drag of the alpha across something
+held passes through forty colours on its way to the one that was wanted, and
+none of the forty is worth a slot. The empty slots are drawn, so the strip keeps its
 shape as it fills. It belongs to the table rather than to any one drawing, so
 it survives opening another, and *+* still adds to the palette proper.
 
@@ -273,11 +283,19 @@ slots puts it at the end of what is actually in them.
 
 *Gradient* turns the ink into a fade from one colour to another. It applies to
 anything that takes ink — a fill, a solid shape, or a stroke along its length.
-Switching it on the first time runs from the ink you have to the same colour
-again, so nothing changes on the paper until you set the far stop; switching it
-off keeps the colour it started from, so the ink never jumps either way. After
-that it remembers the sweep, and switching it back on returns the angle, the
-anchor and the colour it faded to. The angle is degrees clockwise from east.
+Switching it on the first time runs from the ink you have, at full strength, to
+its **complement**, also at full strength — the colour across the painter's wheel
+from it, red to green, blue to orange, yellow to violet, as light and as strong
+as it is; or for a grey, which has no complement, the grey across from it, black
+to white — so there is a sweep to see at once. Switching it off keeps the
+colour it started from. After that it remembers the sweep, and switching it back
+on returns the angle, the anchor and the colour it faded to. The angle is
+degrees clockwise from east.
+
+A **swatch** is the ink it shows, whole — clicked in the palette or the recent
+strip, or chosen with a number key. A plain colour puts the gradient away and a
+gradient brings it out, and the switch follows either way; the sweep put away is
+remembered, so switching back on returns it.
 
 *Across* decides what the sweep is measured over, and both choices repeat
 exactly:
@@ -296,12 +314,28 @@ a second kind of value:
 
     lin(45,shape,#cf4326,#2b4a9c)
 
-Each end has its own colour field and its own alpha. The pair above the
-Gradient switch are the stop the sweep **starts** from — they are the ink
-itself, and read as such with the gradient off — and the pair inside the row
-are the one it ends at. The far alpha goes all the way to nothing, unlike the
-ink's: a fade that stopped just short would leave a visible edge where it
-ended, and the near stop is still there to find the mark by.
+The switch heads the **Ink** panel, and with the gradient on the ink's
+controls become the gradient's own, in three boxes. **Sweep** is the gradient as
+a whole: a button that swaps the two ends and the **+** that keeps it in the
+palette, at its head, then the angle and what it runs across.
+
+The angle is set on a **dial**: a square of the sweep as it will fall across a
+mark, with a hand pointing the way it runs, so the effect is seen as it is set.
+Drag anywhere on it to point the sweep there — five degrees at a time, or to the
+nearest 45° with `Alt`, as a line is held to 45° — or step it with the arrow keys
+once it has focus (`Shift` for 45°), or type the degrees beside it. A drag is one
+step to undo. **From** and **To** are its ends, each with everything that
+belongs to it — its well, which is its colour picker, its hex, an eyedropper of
+its own, and its alpha.
+
+To mix a sweep from the palette, **drag** a plain swatch from either strip onto
+From or To: the box shows a dashed outline while a drop there would fill it. An
+end's eyedropper takes its colour off the drawing, and a swap trades the two
+ends.
+
+Either end may fade all the way to nothing — a fade that stopped just short
+would leave a visible edge where it ended — but not both at once, which would
+be ink no one could find again.
 
 Exported SVG carries a `<linearGradient>` def per sweep, in the tile's own
 coordinates, so one def serves every copy the sheet instances.
@@ -403,11 +437,11 @@ out an area instead.
 Three palettes come with the table — **Riso**, **Bauhaus** and **Graphite**,
 fifteen colours each — and you can keep as many of your own as you like.
 
-Under the swatches is the mixer: a **hex field** that takes any of `#rrggbb`,
-`#rgb`, `#rrggbbaa` or `#rgba`, with or without the `#`; a half-filled circle
-that opens the system colour picker; and an **eyedropper** `I` — arm it and the
-next click anywhere on the plane takes the colour under the pointer, `Esc` to
-put it down.
+The colour in hand is the **Ink** panel, under the palette: its well — click it
+and the system colour picker opens on that colour — a **hex field** that takes
+any of `#rrggbb`, `#rgb`, `#rrggbbaa` or `#rgba`, with or without the `#`; and an
+**eyedropper** `I` — arm it and the next click anywhere on the plane takes the
+colour under the pointer, `Esc` to put it down.
 
 It asks the **mark**, and the canvas only where there is no mark. A stroke two
 units wide is half soft edge, and a pixel read off that edge is the mark's
@@ -426,7 +460,7 @@ well is drawn over a check so you can see what is left of the paper.
 printed, so adding to one takes a copy first — *My Riso*, say — and adds it
 there. **New** names a palette of your own and starts it **empty**: it is
 somewhere to put colours rather than another copy of the ones already to hand,
-and *+* and the recently mixed strip are where they come from. A swatch in one
+and *+* and the recently used strip are where they come from. A swatch in one
 of yours has a **×** on hover, and a palette of yours may be emptied right out,
 since it can be made that way. The **pencil** renames one of yours — the
 built-ins keep their names — and **Del** asks once, then removes the palette.
