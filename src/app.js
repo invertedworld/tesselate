@@ -836,8 +836,8 @@
   // What the plane should show: the committed shapes, with a shape
   // being dragged swapped for its moved copy, plus any live draft.
   function drawList() {
-    if (!moving && !draft && !(grip && grip.previews)) return state.shapes;
-    const list = state.shapes.slice();
+    if (!moving && !draft && !typing && !(grip && grip.previews)) return state.shapes;
+    let list = state.shapes.slice();
     if (moving) {
       moving.members.forEach((m, k) => {
         const i = list.indexOf(m);
@@ -850,6 +850,9 @@
         if (i >= 0) list[i] = grip.previews[k];
       });
     }
+    // The letters being typed stand in for the mark they came from,
+    // which would otherwise show through them at its old wording.
+    if (typing && typing.was) list = list.filter((sh) => sh !== typing.was);
     if (draft) list.push(draft);
     return list;
   }
@@ -2130,13 +2133,18 @@
           ? newStroke({ kind: 'poly', pts: [p, p, p, p], filled: state.filled })
           : newStroke({ kind: 'rect', x: p.x, y: p.y, w: 0, h: 0, filled: state.filled });
         break;
-      case 'text':
-        /* A click sets down whatever is being typed and starts again
-           where it landed, so a row of labels is click, type, click. */
+      case 'text': {
+        /* A click sets down whatever is being typed. Landing on letters
+           already down it opens those instead of starting a caret on top
+           of them; landing on bare paper it starts again where it fell,
+           so a row of labels is click, type, click. */
         endTyping();
-        startTyping(p);
+        const on = hitTest(w, { textOnly: true, anyTile: true });
+        if (on) openTyping(on, { ...(hitTile || activeTile) });
+        else startTyping(p, { ...activeTile });
         mode = null;
         return true;
+      }
       case 'fill':
         doFill(w);
         // One click, one deliberate colouring: written down at once, like
@@ -3109,7 +3117,8 @@
        holding an interior answered for every click inside itself — and a
        line drawn across such a mark could not be got at, whatever you
        did. Now the border wins wherever it is. */
-    const passes = o.fillsOnly ? ['fill']
+    const passes = o.textOnly ? ['type']
+      : o.fillsOnly ? ['fill']
       : o.strokesOnly ? ['edge', 'interior']
       : o.interior ? ['edge', 'interior', 'fill', 'inside']
       : ['edge', 'interior', 'fill'];
@@ -3184,6 +3193,14 @@
       } else if (pass === 'fill') {
         if (s.layer !== 'fill') continue;
         if (ctx.isPointInPath(path, p.x, p.y, 'evenodd')) { hit = s; break; }
+      } else if (pass === 'type') {
+        /* Text answers for the block its words fill, not for the ink of
+           the letters: a letter is mostly the paper between its strokes,
+           and hunting for a stem to land on is no way to get at a word.
+           Asked from the top down, the nearest to hand answers. */
+        if (!s.type) continue;
+        const b = shapeBBox(s);
+        if (b && p.x >= b.x0 && p.x <= b.x1 && p.y >= b.y0 && p.y <= b.y1) { hit = s; break; }
       } else {
         if (s.layer !== 'stroke' || s.filled || !CLOSED[s.kind]) continue;
         if (ctx.isPointInPath(path, p.x, p.y)) { hit = s; break; }
@@ -3708,26 +3725,46 @@
     return typeTrace;
   }
 
-  /* What is typed, as a mark: the rings put where the caret was and
-     scaled to the size in hand. The point clicked is the top left of the
-     first line, which is where the caret stands. */
+  /* What is typed, as a mark: the rings put where the caret was, scaled
+     to the size in hand and then through whatever has been done to the
+     mark since it was first set down — nothing, for a new one. The point
+     clicked is the top left of the first line, which is where the caret
+     stands and what the letters grow from.
+
+     The mark keeps the words and how they were set, so that clicking it
+     opens them again. */
   function typeMark(t) {
     if (!t.text.trim()) return null;
     const got = typeOutline(t.text);
     if (!got.loops) return null;
     const k = state.typeSize / TYPE_PX;
     const ox = t.at.x - TYPE_PAD * k, oy = t.at.y - TYPE_PAD * k;
+    const m = t.m || IDENT;
     /* Kept to a hundredth of a tile unit. The rings come off the easing
        as full floats, seventeen digits of a number whose last fourteen
        say nothing — they made a word of two letters a forty-kilobyte
        mark, and the file is meant to be read. */
     const r2 = (v) => Math.round(v * 100) / 100;
+    const put = (p) => {
+      const q = mapAffine(m, { x: ox + p.x * k, y: oy + p.y * k });
+      return { x: r2(q.x), y: r2(q.y) };
+    };
     return Object.assign({
       id: t.id,
       kind: 'region',
       layer: 'stroke',
       filled: true,
-      loops: got.loops.map((l) => l.map((p) => ({ x: r2(ox + p.x * k), y: r2(oy + p.y * k) }))),
+      loops: got.loops.map((l) => l.map(put)),
+      type: {
+        text: t.text,
+        size: state.typeSize,
+        face: state.typeFace,
+        bold: state.typeBold || undefined,
+        at: t.at,
+        // An upright mark that has not been moved says so by saying
+        // nothing, which keeps the file clean.
+        m: m === IDENT ? undefined : m,
+      },
     }, inkFor('color'));
   }
 
@@ -3752,11 +3789,39 @@
     draft = typing ? typeMark(typing) : null;
   }
 
-  function startTyping(at) {
-    typing = { id: shapeSeq++, at, tile: { ...activeTile }, text: '' };
+  function startTyping(at, tile) {
+    typing = { id: shapeSeq++, at, m: IDENT, tile, text: '', was: null };
     draft = null;
     setHint(HINTS.typing, true);
     requestDraw();
+  }
+
+  /* Clicking letters that are already down opens them again. The words
+     come back with the size, the face and the ink they were set in — the
+     ink as the eyedropper would take it, so a re-cut keeps its colour
+     and changing the ink while it is open still recolours it — and the
+     caret goes to the end of them. The mark itself is held out of the
+     picture until it is set down again, so what is on the plane while
+     you type is what you will get: in the place, at the turn and in the
+     mirror the old one had. */
+  function openTyping(mark, tile) {
+    const t = mark.type;
+    state.typeSize = clamp(Math.round(t.size), 20, 400);
+    if (FACES[t.face]) state.typeFace = t.face;
+    state.typeBold = !!t.bold;
+    syncType();
+    syncToggles();
+    if (mark.color) {
+      // Not `takeInk`: that is the eyedropper, which drops a flat colour
+      // on to the end of a sweep already in hand rather than replacing
+      // it. What the letters were written in is what should come back.
+      if (parseInk(mark.color)) state.across = acrossOf(mark, 'color');
+      setColor(mark.color, true, true);
+      syncAcross();
+    }
+    typing = { id: mark.id, at: t.at, m: t.m || IDENT, tile, text: t.text, was: mark };
+    setHint(HINTS.typing, true);
+    retype();
   }
 
   /* Setting down what is typed. The ink, the size and the face are read
@@ -3770,6 +3835,18 @@
     typeDirty = false;
     draft = null;
     setHint(HINTS[state.tool]);
+    /* Opened and set down again: the new cut takes the old one's place
+       in the stack, and with it the group it was bound into. Emptied of
+       its words altogether, the mark goes with them. */
+    if (t.was) {
+      if (mark && t.was.group != null) mark.group = t.was.group;
+      replaceShapes(mark
+        ? state.shapes.map((sh) => (sh === t.was ? mark : sh))
+        : state.shapes.filter((sh) => sh !== t.was));
+      usedNow();
+      flash(mark ? 'Text set down again' : 'Emptied of words — the mark has gone with them');
+      return true;
+    }
     if (!mark) { requestDraw(); return false; }
     commit(mark);
     usedNow();
@@ -3814,13 +3891,18 @@
     const k = state.typeSize / TYPE_PX;
     const x = typing.at.x + typeCtx().measureText(lines[lines.length - 1]).width * k;
     const y = typing.at.y + (lines.length - 1) * typeLead() * k;
+    const m = typing.m || IDENT;
     const f = typing.tile;
+    // Through the mark's own affine, so the caret stands in the letters
+    // of a word that has been turned or mirrored rather than beside them.
+    const a = mapAffine(m, { x, y });
+    const b = mapAffine(m, { x, y: y + state.typeSize });
     ctx.save();
     ctx.strokeStyle = ACCENT;
     ctx.lineWidth = 2;
     ctx.lineCap = 'butt';
     ctx.beginPath();
-    tracePlane([placeIn({ x, y }, f.i, f.j), placeIn({ x, y: y + state.typeSize }, f.i, f.j)], false);
+    tracePlane([placeIn(a, f.i, f.j), placeIn(b, f.i, f.j)], false);
     ctx.stroke();
     ctx.restore();
   }

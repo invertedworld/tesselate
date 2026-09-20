@@ -402,6 +402,44 @@ function snapPoint(p, n) {
   return { x: Math.round(p.x / step) * step, y: Math.round(p.y / step) * step };
 }
 
+/* ---- What a mark was made from --------------------------------- */
+
+/* A text mark carries the words it was cut from, so that they can be
+   edited and the letters cut again. What has been done to the mark
+   since is carried beside them as a single affine rather than being
+   lost in its points: the rings are cut upright, at the size and place
+   they were asked for, and put through it. So a word turned and
+   mirrored yesterday is still turned and mirrored when a letter is
+   added to it today, and growing it grows from the corner it was
+   started at.
+
+   Marks are replaced rather than changed, so the recipe is replaced
+   with them and an undo step keeps the one it had. */
+const IDENT = [1, 0, 0, 1, 0, 0];
+
+// x' = a·x + c·y + e, y' = b·x + d·y + f — the canvas's own order.
+function mapAffine(m, p) {
+  return { x: m[0] * p.x + m[2] * p.y + m[4], y: m[1] * p.x + m[3] * p.y + m[5] };
+}
+
+// `n` first, then `m`.
+function mulAffine(m, n) {
+  return [
+    m[0] * n[0] + m[2] * n[1],
+    m[1] * n[0] + m[3] * n[1],
+    m[0] * n[2] + m[2] * n[3],
+    m[1] * n[2] + m[3] * n[3],
+    m[0] * n[4] + m[2] * n[5] + m[4],
+    m[1] * n[4] + m[3] * n[5] + m[5],
+  ];
+}
+
+/* Carry a mark's recipe through whatever has just been done to its
+   points. A mark with none is left alone. */
+function keepRecipe(out, s, m) {
+  if (s.type) out.type = Object.assign({}, s.type, { m: mulAffine(m, s.type.m || IDENT) });
+}
+
 /* ---- Moving shapes about --------------------------------------- */
 
 // Returns a NEW shape: shapes are treated as immutable so the undo
@@ -431,6 +469,7 @@ function scaleShape(s, cx, cy, k) {
     }
     case 'region': out.loops = s.loops.map((l) => l.map(mp)); break;
   }
+  keepRecipe(out, s, [k, 0, 0, k, cx * (1 - k), cy * (1 - k)]);
   return out;
 }
 
@@ -456,6 +495,7 @@ function flipShape(s, cx, cy, axis) {
     }
     case 'region': out.loops = s.loops.map((l) => l.map(mp)); break;
   }
+  keepRecipe(out, s, axis === 'x' ? [-1, 0, 0, 1, 2 * cx, 0] : [1, 0, 0, -1, 0, 2 * cy]);
   return out;
 }
 
@@ -480,6 +520,7 @@ function rotateShape(s, cx, cy, ang) {
     }
     case 'region': out.loops = s.loops.map((l) => l.map(mp)); break;
   }
+  keepRecipe(out, s, [c, n, -n, c, cx - c * cx + n * cy, cy - n * cx - c * cy]);
   return out;
 }
 
@@ -494,6 +535,7 @@ function translateShape(s, dx, dy) {
     case 'rect': out.x = s.x + dx; out.y = s.y + dy; break;
     case 'region': out.loops = s.loops.map((l) => l.map(mp)); break;
   }
+  keepRecipe(out, s, [1, 0, 0, 1, dx, dy]);
   return out;
 }
 
