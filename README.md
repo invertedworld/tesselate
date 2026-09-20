@@ -632,6 +632,11 @@ presets are stored relative to it.
 - **Rows** / **Columns** / **Checker** — half-turns in one direction or alternating
 - **Triple**, **Cascade**, **Windmill**, **Spin** — diagonal and 4×4 rotations
 
+Changing the block is an edit of the drawing like any other. A preset, a new
+size and a turned square each go on the undo stack, so a smaller block is not
+the one-way door it looks: it drops the squares outside it, and `⌘Z` brings
+them back with their turns.
+
 **Show orientation** puts a small arrow in each square on the plane, pointing
 the way that square has been turned. A drawing under a block of quarter-turns
 reads as one figure, and it is easy to lose track of which square is which; the

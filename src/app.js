@@ -1907,10 +1907,13 @@
   // Printer's crop marks around the drawing surface.
   /* ---------------- history ---------------- */
 
-  /* A step holds the marks and the warp together, so undo takes an
-     anchor back as readily as a line. Both are replaced rather than
-     changed in place, so a step is a copy of a list and a reference. */
-  const snapshot = () => ({ shapes: state.shapes.slice(), warp: state.warp });
+  /* A step holds the marks, the warp and the symmetry block together, so
+     undo takes an anchor back, or a square of the block turned, as
+     readily as a line. All three are replaced rather than changed in
+     place, so a step is a copy of a list and two references. */
+  const snapshot = () => ({
+    shapes: state.shapes.slice(), warp: state.warp, pattern: state.pattern,
+  });
 
   function pushStep() {
     undoStack.push(snapshot());
@@ -1921,6 +1924,7 @@
   function takeBack(step) {
     state.shapes = step.shapes;
     state.warp = step.warp;
+    if (step.pattern !== state.pattern) usePattern(step.pattern);
     if (!state.warp.anchors[warpSel]) warpSel = -1;
     syncWarpPanel();
   }
@@ -5316,13 +5320,7 @@
     b.className = 'chip';
     b.dataset.preset = p.id;
     b.textContent = p.name;
-    b.addEventListener('click', () => {
-      state.pattern = { n: p.n, cells: cellsFromPreset(p) };
-      buildPatternGrid();
-      syncSymmetry();
-      requestDraw();
-      saveSoon();
-    });
+    b.addEventListener('click', () => setPattern({ n: p.n, cells: cellsFromPreset(p) }));
     presetWrap.appendChild(b);
   });
 
@@ -5334,11 +5332,9 @@
     b.title = `${n} × ${n} block`;
     b.addEventListener('click', () => {
       if (state.pattern.n === n) return;
-      state.pattern = { n, cells: resizeCells(state.pattern.cells, state.pattern.n, n) };
-      buildPatternGrid();
-      syncSymmetry();
-      requestDraw();
-      saveSoon();
+      /* A smaller block drops the squares outside it. The step behind
+         holds the old one whole, so the turns come back with undo. */
+      setPattern({ n, cells: resizeCells(state.pattern.cells, state.pattern.n, n) });
     });
     sizeWrap.appendChild(b);
   });
@@ -5359,10 +5355,9 @@
         b.innerHTML = `<svg viewBox="0 0 24 24">${CELL_GLYPH}</svg>`;
         if (idx > 0) {
           b.addEventListener('click', () => {
-            state.pattern.cells[idx] = (state.pattern.cells[idx] + 1) % 4;
-            syncSymmetry();
-            requestDraw();
-            saveSoon();
+            const cells = state.pattern.cells.slice();
+            cells[idx] = (cells[idx] + 1) % 4;
+            setPattern({ n: state.pattern.n, cells });
           });
         }
         gridWrap.appendChild(b);
@@ -5380,6 +5375,25 @@
     const id = matchPreset(state.pattern);
     for (const b of presetWrap.children) b.classList.toggle('on', b.dataset.preset === id);
     for (const b of sizeWrap.children) b.classList.toggle('on', +b.dataset.size === n);
+  }
+
+  /* Put a block in force and show it. The squares are only rebuilt when
+     the size changes; turning one keeps the buttons, and with them
+     whatever the keyboard was on. Undo comes back through here too. */
+  function usePattern(next) {
+    const sized = next.n !== state.pattern.n;
+    state.pattern = next;
+    if (sized) buildPatternGrid(); else syncSymmetry();
+  }
+
+  /* Changing the symmetry is an edit of the drawing like any other: it
+     goes on the stack, it marks the table dirty, and undo takes it back.
+     A block is replaced rather than turned in place, so the step behind
+     it still holds the one it was made with. */
+  function setPattern(next) {
+    pushStep();
+    usePattern(next);
+    afterChange();
   }
 
   /* table --------------------------------------------------------- */
