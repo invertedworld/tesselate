@@ -3808,7 +3808,7 @@
   }
 
   function startTyping(at, tile) {
-    typing = { id: shapeSeq++, at, m: IDENT, tile, text: '', was: null };
+    typing = { id: shapeSeq++, at, m: IDENT, tile, text: '', caret: 0, was: null };
     draft = null;
     setHint(HINTS.typing, true);
     requestDraw();
@@ -3838,7 +3838,9 @@
       setColor(mark.color, true, true);
       syncAcross();
     }
-    typing = { id: mark.id, at: t.at, m: t.m || IDENT, tile, text: t.text, was: mark };
+    // The caret goes to the end of the words, where typing carries on
+    // from; the arrows take it back into them.
+    typing = { id: mark.id, at: t.at, m: t.m || IDENT, tile, text: t.text, caret: t.text.length, was: mark };
     setHint(HINTS.typing, true);
     retype();
   }
@@ -3873,6 +3875,79 @@
     return true;
   }
 
+  /* Where the caret stands in what has been typed: which line it is on,
+     how far into that line, and where that line begins. The caret is an
+     offset into the text rather than a place on the plane, so every move
+     and every edit is done on the string and the letters follow. */
+  function caretSpot(t) {
+    const lines = t.text.split('\n');
+    let at = 0;
+    for (let row = 0; row < lines.length; row++) {
+      if (t.caret <= at + lines[row].length) return { lines, row, col: t.caret - at, start: at };
+      at += lines[row].length + 1;
+    }
+    const row = lines.length - 1;
+    return { lines, row, col: lines[row].length, start: at - lines[row].length - 1 };
+  }
+
+  /* The near edge of the word `dir` away: over whatever spaces lie that
+     way, then over the run of letters beyond them. A new line is a space
+     like any other, so a jump at the end of one carries on to the next. */
+  function wordEdge(text, from, dir) {
+    const word = (c) => c && /\S/.test(c);
+    let i = from;
+    if (dir < 0) {
+      while (i > 0 && !word(text[i - 1])) i--;
+      while (i > 0 && word(text[i - 1])) i--;
+    } else {
+      while (i < text.length && !word(text[i])) i++;
+      while (i < text.length && word(text[i])) i++;
+    }
+    return i;
+  }
+
+  /* Moving the caret. Left and right by a letter, by a word with Alt, or
+     to the end of the line with ⌘; up and down by a line, holding the
+     column where the line reaches that far and stopping at its end
+     where it does not. Returns false for a key that moves nothing, so
+     the caller can leave it to whatever else wants it. */
+  function moveCaret(e) {
+    const t = typing;
+    const { lines, row, col, start } = caretSpot(t);
+    const wide = e.metaKey || e.ctrlKey;
+    const toRow = (r) => {
+      const at = r < row
+        ? start - lines[r].length - 1
+        : start + lines[row].length + 1;
+      return at + Math.min(col, lines[r].length);
+    };
+    let to = null;
+    switch (e.key) {
+      case 'ArrowLeft':
+        to = wide ? start : e.altKey ? wordEdge(t.text, t.caret, -1) : t.caret - 1;
+        break;
+      case 'ArrowRight':
+        to = wide ? start + lines[row].length
+          : e.altKey ? wordEdge(t.text, t.caret, 1) : t.caret + 1;
+        break;
+      case 'ArrowUp': to = row > 0 ? toRow(row - 1) : 0; break;
+      case 'ArrowDown': to = row < lines.length - 1 ? toRow(row + 1) : t.text.length; break;
+      case 'Home': to = start; break;
+      case 'End': to = start + lines[row].length; break;
+      default: return false;
+    }
+    t.caret = clamp(to, 0, t.text.length);
+    requestDraw();     // the letters have not changed, only the caret
+    return true;
+  }
+
+  // Put something in where the caret stands, and leave it after.
+  function typeIn(str) {
+    typing.text = typing.text.slice(0, typing.caret) + str + typing.text.slice(typing.caret);
+    typing.caret += str.length;
+    retype();
+  }
+
   /* One key of typing. Held apart from the rest of the keyboard because
      while a caret is down the keys are letters and not shortcuts. */
   function typeKey(e) {
@@ -3880,23 +3955,36 @@
     if (e.key === 'Enter') {
       e.preventDefault();
       // A line of its own is Shift-Enter; Enter on its own is done.
-      if (e.shiftKey) { typing.text += '\n'; retype(); return true; }
+      if (e.shiftKey) { typeIn('\n'); return true; }
       endTyping();
       return true;
     }
+    if (moveCaret(e)) { e.preventDefault(); return true; }
     if (e.key === 'Backspace') {
       e.preventDefault();
-      typing.text = typing.text.slice(0, -1);
-      retype();
+      if (typing.caret > 0) {
+        typing.text = typing.text.slice(0, typing.caret - 1) + typing.text.slice(typing.caret);
+        typing.caret--;
+        retype();
+      }
+      return true;
+    }
+    // Forward delete takes the letter the caret stands before, which is
+    // worth having now that it can stand anywhere.
+    if (e.key === 'Delete') {
+      e.preventDefault();
+      if (typing.caret < typing.text.length) {
+        typing.text = typing.text.slice(0, typing.caret) + typing.text.slice(typing.caret + 1);
+        retype();
+      }
       return true;
     }
     if (e.key.length === 1) {
       e.preventDefault();
-      typing.text += e.key;
-      retype();
+      typeIn(e.key);
       return true;
     }
-    // Anything else — a function key, an arrow — is swallowed rather
+    // Anything else — a function key, a page key — is swallowed rather
     // than let through to a shortcut it would trigger mid-word.
     return true;
   }
@@ -3906,10 +3994,10 @@
      which is not part of the picture, and one in every square would be a
      field of them. It does not blink; nothing else on the plane does. */
   function drawCaret() {
-    const lines = typing.text.split('\n');
+    const { lines, row, col } = caretSpot(typing);
     const k = state.typeSize / TYPE_PX;
-    const x = typing.at.x + typeCtx().measureText(lines[lines.length - 1]).width * k;
-    const y = typing.at.y + (lines.length - 1) * typeLead() * k;
+    const x = typing.at.x + typeCtx().measureText(lines[row].slice(0, col)).width * k;
+    const y = typing.at.y + row * typeLead() * k;
     const m = typing.m || IDENT;
     const f = typing.tile;
     // Through the mark's own affine, so the caret stands in the letters
@@ -4212,6 +4300,13 @@
     if (meta && k === 'v' && !e.shiftKey && !e.altKey) { pasteByKey(); return; }
     // ⌘D would otherwise bookmark the page.
     if (meta && k === 'd' && !e.shiftKey && !e.altKey) { e.preventDefault(); duplicateHeld(); return; }
+    /* The line-end moves are ⌘← and ⌘→ on this keyboard, so they are
+       taken before every other unclaimed shortcut is dropped below. */
+    if (typing && meta && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      moveCaret(e);
+      return;
+    }
     if (meta) return;
 
     /* A caret is down: every key from here is a letter. The shortcuts
