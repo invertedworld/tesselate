@@ -334,27 +334,34 @@ function ease(ring, cap, passes) {
   return cur;
 }
 
-/* Turn a grown mask into closed polygons in tile units. */
-function loopsFromMask(mask, W, H, eps) {
-  const scale = T / W;
+/* Closed polygons round the ink of a mask, in the mask's own cells.
+   The fill lays its grid over the tile and wants tile units back; the
+   letters of a text mark are rastered at their own size and are put
+   where they belong by the caller, so the cells are handed back as
+   they are. */
+function loopsFromInk(mask, W, H, eps) {
   const loops = maskToLoops(mask, W, H)
     .map((loop) => {
       // Close the ring before simplifying so the seam is not a corner.
       const ring = loop.concat([loop[0]]);
-      const simp = simplify(ring, eps == null ? 2 : eps);
+      const simp = simplify(ring, eps);
       simp.pop();
       /* Easing takes the staircase off the traced edge, but a sharp
          corner has to be left where it is: averaging pulls a point like
          the tip of a wedge inwards, which opens a notch exactly where
          the fill most needs to reach. The ends wrap round, since these
          rings are closed. */
-      const n = simp.length;
-      const cap = eps == null ? 2 : eps;
-      const eased = n < 4 ? simp : ease(simp, cap);
-      return eased.map((p) => ({ x: p.x * scale, y: p.y * scale }));
+      return simp.length < 4 ? simp : ease(simp, eps);
     })
     .filter((l) => l.length >= 3);
   return loops.length ? loops : null;
+}
+
+/* Turn a grown mask into closed polygons in tile units. */
+function loopsFromMask(mask, W, H, eps) {
+  const scale = T / W;
+  const loops = loopsFromInk(mask, W, H, eps == null ? 2 : eps);
+  return loops && loops.map((l) => l.map((p) => ({ x: p.x * scale, y: p.y * scale })));
 }
 
 /* ---- Misc helpers ---------------------------------------------- */

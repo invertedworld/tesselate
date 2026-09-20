@@ -334,6 +334,8 @@
     circle: 'Circle — drag rim to rim, or click each end · Shift draws from the centre',
     rect: 'Rectangle — click a corner, then the opposite one · Shift squares it',
     fill: 'Fill — click an enclosed area, or a mark to recolour it',
+    text: 'Text — click where the letters are to start, then type',
+    typing: 'Typing — Enter sets it down, Shift-Enter takes a new line, Esc drops it',
     erase: 'Erase — click or drag across a mark',
     warp: 'Warp — click the paper to drop an anchor · drag its dot to move it, the square on its rim to size it',
   };
@@ -353,6 +355,9 @@
     palettes: [],       // the user's own named palettes
     recent: [],         // ink used on the drawing, newest first
     filled: false,
+    typeSize: 140,      // how tall the letters of a text mark are set
+    typeFace: 'sans',   // 'sans' | 'serif' | 'mono'
+    typeBold: false,
     grid: true,
     arrows: false,      // an arrow per square, showing the turn it carries
     snap: false,
@@ -375,6 +380,9 @@
     across: state.across,
     width: state.width,
     filled: state.filled,
+    typeSize: state.typeSize,
+    typeFace: state.typeFace,
+    typeBold: state.typeBold,
     grid: state.grid,
     arrows: state.arrows,
     snap: state.snap,
@@ -730,7 +738,7 @@
 
   const sp = (w) => (snapping() ? snapAt(w) || w : w);
 
-  const SNAP_TOOLS = { line: 1, curve: 1, circle: 1, rect: 1 };
+  const SNAP_TOOLS = { line: 1, curve: 1, circle: 1, rect: 1, text: 1 };
 
   function noteHover(w) {
     const show = snapping() && SNAP_TOOLS[state.tool]
@@ -875,6 +883,7 @@
       ctx.fillRect(0, 0, cw, ch);
     }
 
+    cutLetters();
     draftPath = draft ? buildPath(draft) : null;
     const hair = 0.9 / scale;
     const list = paintOrder(drawList());
@@ -929,6 +938,7 @@
     if (state.sub > 1) drawSubGrid(R);
     if (state.arrows) drawOrientation(R);
     if (picked.length) drawSelection();
+    if (typing) drawCaret();
     if (lasso) drawLasso();
     if (state.tool === 'warp') drawAnchors(R);
     if (hoverSnap) drawSnapMark();
@@ -1955,6 +1965,8 @@
      edit: the steps behind it belong to a picture that is no longer on
      the table, so undoing into them would make no sense. */
   function adoptShapes(next) {
+    // A caret or a half-drawn mark belongs to the picture being put away.
+    cancelDraft();
     undoStack.length = 0;
     redoStack.length = 0;
     state.shapes = next;
@@ -2118,6 +2130,13 @@
           ? newStroke({ kind: 'poly', pts: [p, p, p, p], filled: state.filled })
           : newStroke({ kind: 'rect', x: p.x, y: p.y, w: 0, h: 0, filled: state.filled });
         break;
+      case 'text':
+        /* A click sets down whatever is being typed and starts again
+           where it landed, so a row of labels is click, type, click. */
+        endTyping();
+        startTyping(p);
+        mode = null;
+        return true;
       case 'fill':
         doFill(w);
         // One click, one deliberate colouring: written down at once, like
@@ -2501,13 +2520,16 @@
   }
 
   function cancelDraft() {
-    if (!draft && !pending && !moving && !grip && !warpDrag) return false;
+    if (!draft && !pending && !moving && !grip && !warpDrag && !typing) return false;
     warpDrag = null;
     canvas.classList.remove('panning');
     draft = null;
     pending = null;
     moving = null;
     grip = null;
+    // Dropped, not set down: what was typed goes with the draft it was.
+    typing = null;
+    typeDirty = false;
     setHint(HINTS[state.tool]);
     requestDraw();
     return true;
@@ -3610,6 +3632,199 @@
     else commit(region);
   }
 
+  /* ---------------- text ---------------- */
+
+  /* Letters are marks like any other. What is typed is rastered once and
+     the boundary of its ink walked into closed rings — the same tracer
+     the fill uses — so a text mark is a region: it moves, turns,
+     mirrors, bends under the warp, wears a sweep and writes itself out
+     as outlines, and nothing downstream of it has to know what a letter
+     is. No raster is kept; the bitmap is scratch, as it is for a fill.
+
+     The trace is made at one size whatever size is asked for and the
+     rings scaled on the way out, so the letters are cut as finely at 20
+     as at 400 and the size slider costs nothing to drag. */
+  const TYPE_PX = 320;      // how tall the letters are rastered
+  const TYPE_PAD = 10;      // clear cells round them, so every ring closes
+  /* How far a ring may stand off the letter it was traced from, in those
+     cells. It is the resolution that buys a smooth curve, not this: a
+     traced edge climbs a staircase a cell high, so anything under a cell
+     asks for every stair to be kept and the rings come back ten times
+     the size for a curve that is no truer. A cell of a letter three
+     hundred tall is a third of a percent of it. */
+  const TYPE_EPS = 1;
+  const TYPE_LEAD = 1.3;    // line to line, against the size
+  const FACES = {
+    sans: 'ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif',
+    serif: 'ui-serif, Georgia, "Times New Roman", Times, serif',
+    mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  };
+
+  let typing = null;        // what is being typed, before it is set down
+  let typeDirty = false;    // the letters need cutting again this frame
+  let typeCanvas = null;
+  let typeTrace = { sig: '' };
+
+  const typeFont = () => `${state.typeBold ? '700 ' : ''}${TYPE_PX}px ${FACES[state.typeFace] || FACES.sans}`;
+
+  function typeCtx() {
+    if (!typeCanvas) typeCanvas = document.createElement('canvas');
+    const g = typeCanvas.getContext('2d', { willReadFrequently: true });
+    g.font = typeFont();
+    return g;
+  }
+
+  const typeLead = () => Math.round(TYPE_PX * TYPE_LEAD);
+
+  /* The rings round what is typed, in the cells they were traced on,
+     kept against the words and the face they came from: a change of
+     size or of place is then arithmetic on them rather than another
+     trace. */
+  function typeOutline(text) {
+    const sig = `${state.typeFace}|${state.typeBold ? 'b' : ''}|${text}`;
+    if (typeTrace.sig === sig) return typeTrace;
+    const lines = text.split('\n');
+    const lead = typeLead();
+    let wide = 0;
+    for (const l of lines) wide = Math.max(wide, typeCtx().measureText(l).width);
+    const W = Math.ceil(wide) + TYPE_PAD * 2;
+    const H = lead * lines.length + TYPE_PAD * 2;
+    typeCanvas.width = W;
+    typeCanvas.height = H;
+    // Sizing a canvas empties it and puts its context back to the
+    // defaults, so the face goes on again here rather than above.
+    const g = typeCtx();
+    g.textBaseline = 'top';
+    g.fillStyle = '#000';
+    lines.forEach((l, k) => g.fillText(l, TYPE_PAD, TYPE_PAD + k * lead));
+    // Half cover is where the edge of a letter lies. Read a byte at a
+    // time: reading the pixel as a word and taking its top byte is a few
+    // milliseconds quicker on a long line, and wrong on a machine that
+    // orders its bytes the other way.
+    const px = g.getImageData(0, 0, W, H).data;
+    const mask = new Uint8Array(W * H);
+    for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4 + 3] > 127 ? 1 : 0;
+    typeTrace = { sig, loops: loopsFromInk(mask, W, H, TYPE_EPS) };
+    return typeTrace;
+  }
+
+  /* What is typed, as a mark: the rings put where the caret was and
+     scaled to the size in hand. The point clicked is the top left of the
+     first line, which is where the caret stands. */
+  function typeMark(t) {
+    if (!t.text.trim()) return null;
+    const got = typeOutline(t.text);
+    if (!got.loops) return null;
+    const k = state.typeSize / TYPE_PX;
+    const ox = t.at.x - TYPE_PAD * k, oy = t.at.y - TYPE_PAD * k;
+    /* Kept to a hundredth of a tile unit. The rings come off the easing
+       as full floats, seventeen digits of a number whose last fourteen
+       say nothing — they made a word of two letters a forty-kilobyte
+       mark, and the file is meant to be read. */
+    const r2 = (v) => Math.round(v * 100) / 100;
+    return Object.assign({
+      id: t.id,
+      kind: 'region',
+      layer: 'stroke',
+      filled: true,
+      loops: got.loops.map((l) => l.map((p) => ({ x: r2(ox + p.x * k), y: r2(oy + p.y * k) }))),
+    }, inkFor('color'));
+  }
+
+  /* The letters as they stand are kept under `draft`, so they are
+     painted in every square and bent by the warp exactly as they will be
+     once they are set down: what is being typed is already the mark.
+
+     A keystroke asks for them to be cut again but does not cut them. A
+     burst of typing would otherwise trace the whole line once per key,
+     and a long line takes tens of milliseconds to trace; the frame does
+     it instead, so however fast the keys come there is one trace to show
+     them. */
+  function retype() {
+    typeDirty = true;
+    requestDraw();
+  }
+
+  // Called by the frame, just before the plane is painted.
+  function cutLetters() {
+    if (!typeDirty) return;
+    typeDirty = false;
+    draft = typing ? typeMark(typing) : null;
+  }
+
+  function startTyping(at) {
+    typing = { id: shapeSeq++, at, tile: { ...activeTile }, text: '' };
+    draft = null;
+    setHint(HINTS.typing, true);
+    requestDraw();
+  }
+
+  /* Setting down what is typed. The ink, the size and the face are read
+     now rather than when the caret was placed, so a colour or a size
+     chosen part way through belongs to the whole of it. */
+  function endTyping() {
+    const t = typing;
+    if (!t) return false;
+    const mark = typeMark(t);
+    typing = null;
+    typeDirty = false;
+    draft = null;
+    setHint(HINTS[state.tool]);
+    if (!mark) { requestDraw(); return false; }
+    commit(mark);
+    usedNow();
+    flash('Text set down — it is a mark now, like any other');
+    return true;
+  }
+
+  /* One key of typing. Held apart from the rest of the keyboard because
+     while a caret is down the keys are letters and not shortcuts. */
+  function typeKey(e) {
+    if (e.key === 'Escape') { cancelDraft(); return true; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // A line of its own is Shift-Enter; Enter on its own is done.
+      if (e.shiftKey) { typing.text += '\n'; retype(); return true; }
+      endTyping();
+      return true;
+    }
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      typing.text = typing.text.slice(0, -1);
+      retype();
+      return true;
+    }
+    if (e.key.length === 1) {
+      e.preventDefault();
+      typing.text += e.key;
+      retype();
+      return true;
+    }
+    // Anything else — a function key, an arrow — is swallowed rather
+    // than let through to a shortcut it would trigger mid-word.
+    return true;
+  }
+
+  /* The caret stands where the next letter will go, in the square the
+     text was started in and in no other: it says where the hand is,
+     which is not part of the picture, and one in every square would be a
+     field of them. It does not blink; nothing else on the plane does. */
+  function drawCaret() {
+    const lines = typing.text.split('\n');
+    const k = state.typeSize / TYPE_PX;
+    const x = typing.at.x + typeCtx().measureText(lines[lines.length - 1]).width * k;
+    const y = typing.at.y + (lines.length - 1) * typeLead() * k;
+    const f = typing.tile;
+    ctx.save();
+    ctx.strokeStyle = ACCENT;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'butt';
+    ctx.beginPath();
+    tracePlane([placeIn({ x, y }, f.i, f.j), placeIn({ x, y: y + state.typeSize }, f.i, f.j)], false);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   /* ---------------- pointer input ---------------- */
 
   let lastWorld = { x: -1e6, y: -1e6 };
@@ -3843,9 +4058,11 @@
 
   /* ---------------- keyboard ---------------- */
 
+  /* T is the tile rules and has been since grouping took G, so text is
+     on X — the one letter of it left free. */
   const TOOL_KEYS = {
     ' ': 'select', p: 'pencil', l: 'line', a: 'curve',
-    c: 'circle', r: 'rect', f: 'fill', e: 'erase', w: 'warp',
+    c: 'circle', r: 'rect', x: 'text', f: 'fill', e: 'erase', w: 'warp',
   };
 
   window.addEventListener('keydown', (e) => {
@@ -3897,6 +4114,10 @@
     // ⌘D would otherwise bookmark the page.
     if (meta && k === 'd' && !e.shiftKey && !e.altKey) { e.preventDefault(); duplicateHeld(); return; }
     if (meta) return;
+
+    /* A caret is down: every key from here is a letter. The shortcuts
+       above it still work, so undo and save are never out of reach. */
+    if (typing && typeKey(e)) return;
 
     if (state.tool === 'warp' && state.warp.anchors[warpSel]
         && (e.key === 'Delete' || e.key === 'Backspace')) {
@@ -3996,6 +4217,9 @@
 
   function setTool(tool) {
     hoverGrip = null;
+    /* Reaching for another tool with a word half typed sets it down
+       rather than throwing it away — Esc is how you throw it away. */
+    if (typing) endTyping();
     if (pending) cancelDraft();
     if (tool !== 'select') select([]);
     endLasso(true);
@@ -4068,6 +4292,9 @@
     if (!hex) return;
     state.color = hex;
     syncMixer(quiet);
+    // Letters part way through take the new ink at once, the way a mark
+    // being dragged out does.
+    if (typing) retype();
     if (!inkOnly && picked.length) {
       const swap = new Map();
       // Every mark held, not only the ones clicked: a group is held whole.
@@ -4969,6 +5196,7 @@
     const b = e.target.closest('[data-across]');
     if (!b) return;
     state.across = b.dataset.across;
+    if (typing) retype();
     const tile = state.across === 'tile' ? 'tile' : undefined;
     applyToHeld((sh) => {
       let next = null;
@@ -5038,6 +5266,41 @@
     state.smooth = clamp(Math.round(+smoothInput.value), 0, 100);
     syncSmooth();
     saveSoon();
+  });
+
+  /* The text controls. Each hands the keyboard back to the tile as it is
+     let go: a range or a button keeps the focus once it has been used,
+     and every letter typed after that would go to it rather than to what
+     is being typed. Size and face are read afresh whenever the letters
+     are traced, so both answer while a word is half typed. */
+  const typeSizeInput = document.getElementById('typeSize');
+  function syncType() {
+    typeSizeInput.value = state.typeSize;
+    document.getElementById('typeSizeVal').textContent = state.typeSize;
+    for (const b of document.getElementById('typeFaces').children) {
+      b.classList.toggle('on', b.dataset.face === state.typeFace);
+    }
+  }
+  typeSizeInput.addEventListener('input', () => {
+    state.typeSize = clamp(Math.round(+typeSizeInput.value), 20, 400);
+    syncType();
+    if (typing) retype();
+    saveSoon();
+  });
+  typeSizeInput.addEventListener('change', () => typeSizeInput.blur());
+  document.getElementById('typeFaces').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-face]');
+    if (!b) return;
+    state.typeFace = b.dataset.face;
+    syncType();
+    if (typing) retype();
+    b.blur();
+    saveSoon();
+  });
+  document.getElementById('typeBoldBtn').addEventListener('click', (e) => {
+    // `toggle` has already flipped it; this only takes the focus back.
+    if (typing) retype();
+    e.currentTarget.blur();
   });
 
   // Letting go of any slider closes its run, so the next one is its own
@@ -5429,6 +5692,10 @@
     state.snap = DEFAULTS.snap;
     state.subLast = DEFAULTS.subLast;
     state.filled = DEFAULTS.filled;
+    state.typeSize = DEFAULTS.typeSize;
+    state.typeFace = DEFAULTS.typeFace;
+    state.typeBold = DEFAULTS.typeBold;
+    syncType();
     setDiag(DEFAULTS.diag, true);
     setWidth(DEFAULTS.width);
     state.across = DEFAULTS.across;
@@ -5565,7 +5832,10 @@
         grid: state.grid, arrows: state.arrows, snap: state.snap,
         sub: state.sub, subLast: state.subLast, diag: state.diag, warp: state.warp,
       },
-      ink: { color: state.color, across: state.across, width: state.width, filled: state.filled },
+      ink: {
+        color: state.color, across: state.across, width: state.width, filled: state.filled,
+        typeSize: state.typeSize, typeFace: state.typeFace, typeBold: state.typeBold,
+      },
       palette: {
         name: state.palette,
         palettes: state.palettes,
@@ -5665,6 +5935,10 @@
 
     const ink = d.ink || {};
     if (typeof ink.filled === 'boolean') state.filled = ink.filled;
+    if (typeof ink.typeBold === 'boolean') state.typeBold = ink.typeBold;
+    if (typeof ink.typeSize === 'number') state.typeSize = clamp(Math.round(ink.typeSize), 20, 400);
+    if (FACES[ink.typeFace]) state.typeFace = ink.typeFace;
+    syncType();
     if (typeof ink.width === 'number') setWidth(ink.width);
     const across = ink.across || acrossWritten(ink.color);
     if (across === 'shape' || across === 'tile') state.across = across;
@@ -5937,6 +6211,7 @@
         localStorage.setItem(KEY, JSON.stringify({
           shapes: state.shapes, pattern: state.pattern, tool: state.tool,
           color: state.color, across: state.across, width: state.width, filled: state.filled,
+          typeSize: state.typeSize, typeFace: state.typeFace, typeBold: state.typeBold,
           palette: state.palette, palettes: state.palettes, recent: state.recent,
           grid: state.grid, arrows: state.arrows, snap: state.snap, sub: state.sub,
           subLast: state.subLast, diag: state.diag, warp: state.warp, smooth: state.smooth,
@@ -5975,7 +6250,9 @@
     const across = d.across || acrossWritten(d.color);
     if (across === 'shape' || across === 'tile') state.across = across;
     if (typeof d.width === 'number') state.width = clamp(d.width, 1, 64);
-    for (const f of ['filled', 'grid', 'arrows', 'snap']) {
+    if (typeof d.typeSize === 'number') state.typeSize = clamp(Math.round(d.typeSize), 20, 400);
+    if (FACES[d.typeFace]) state.typeFace = d.typeFace;
+    for (const f of ['filled', 'typeBold', 'grid', 'arrows', 'snap']) {
       if (typeof d[f] === 'boolean') state[f] = d[f];
     }
     if (typeof d.diag === 'boolean') state.diag = d.diag ? 'plane' : 'off';
@@ -6003,6 +6280,7 @@
   syncToggles();
   syncWarpPanel();
   syncSmooth();
+  syncType();
   resize();
   afterChange();
   setDirty(false);   // what was restored is what was last put down

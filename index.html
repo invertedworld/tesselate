@@ -81,6 +81,10 @@
         <svg viewBox="0 0 24 24"><rect x="4.6" y="6.6" width="14.8" height="10.8"/><path d="M4.6 6.6h.01" stroke-width="2.4"/></svg>
         <em>Rect</em>
       </button>
+      <button class="tool" data-tool="text" title="Text — X (click where the letters start, then type; Enter sets them down)">
+        <svg viewBox="0 0 24 24"><path d="M5.4 7.2V4.9h13.2v2.3"/><path d="M12 4.9v14.2"/><path d="M8.9 19.1h6.2"/></svg>
+        <em>Text</em>
+      </button>
       <button class="tool" data-tool="fill" title="Fill — F (click an area, or a mark to recolour it)">
         <svg viewBox="0 0 24 24"><path d="M12 3.8L20.2 12 12 20.2 3.8 12z"/><path d="M12 20.2L3.8 12h16.4z" fill="currentColor" stroke="none"/></svg>
         <em>Fill</em>
@@ -99,7 +103,7 @@
          and hides the box when a tool has none. -->
     <div class="card" id="toolCard">
       <div class="card-title" id="toolCardTitle">Tool</div>
-      <button class="wide toggle" data-toggle="snap" data-for="select line curve circle rect" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
+      <button class="wide toggle" data-toggle="snap" data-for="select line curve circle rect text" title="Snap to the lattice and to the marks already drawn — S · Shift suspends it, or asks for it while it is off"><span class="tick"></span><span>Snap to grid and geometry</span></button>
       <div class="row slide" id="widthRow" data-for="select pencil line curve circle rect" title="How thick a stroke is drawn — and, with something held, every stroke held">
         <span class="mono tiny">Thickness</span>
         <input type="range" id="width" min="1" max="64" step="1" value="9" aria-label="Stroke thickness">
@@ -107,7 +111,7 @@
       </div>
       <!-- What a gradient lies across belongs to the stroke or fill that
            wears it, not to the gradient: shown only with a gradient about. -->
-      <div class="row" id="acrossRow" data-for="select pencil line curve circle rect fill" data-when="sweep" title="What a gradient lies across — for the marks to come and, with something held, every gradient held">
+      <div class="row" id="acrossRow" data-for="select pencil line curve circle rect text fill" data-when="sweep" title="What a gradient lies across — for the marks to come and, with something held, every gradient held">
         <span class="mono tiny">Sweep across</span>
         <div class="modes" id="acrossModes">
           <button data-across="shape" title="Each mark's own bounds, so every copy of it looks the same">Mark</button>
@@ -116,6 +120,24 @@
       </div>
       <button class="wide toggle" data-toggle="filled" id="filledBtn" data-for="circle rect">
         <span class="tick"></span><span>Filled shapes</span>
+      </button>
+      <!-- Text. The size is in tile units, so 1000 is the whole square
+           and 140 fits seven lines down it. -->
+      <div class="row slide" data-for="text" title="How tall the letters are set, against the square — and, with something being typed, what is being typed">
+        <span class="mono tiny">Size</span>
+        <input type="range" id="typeSize" min="20" max="400" step="2" value="140" aria-label="Text size">
+        <span class="mono num" id="typeSizeVal">140</span>
+      </div>
+      <div class="row" data-for="text" title="The face the letters are cut from">
+        <span class="mono tiny">Face</span>
+        <div class="modes" id="typeFaces">
+          <button data-face="sans" title="Plain, even-weighted letters">Sans</button>
+          <button data-face="serif" title="Letters with serifs and a varying stroke">Serif</button>
+          <button data-face="mono" title="Every letter the same width">Mono</button>
+        </div>
+      </div>
+      <button class="wide toggle" data-toggle="typeBold" id="typeBoldBtn" data-for="text">
+        <span class="tick"></span><span>Bold</span>
       </button>
       <div class="row slide" id="smoothRow" data-for="pencil" title="How far a stroke is tidied when you let go — 0 keeps it exactly as drawn">
         <span class="mono tiny">Smooth</span>
@@ -205,7 +227,7 @@
   </section>
 
   <!-- The colour panels show only for the tools that put colour down. -->
-  <section class="panel" id="palettePanel" data-for="pencil line curve circle rect fill">
+  <section class="panel" id="palettePanel" data-for="pencil line curve circle rect text fill">
     <div class="label"><span>Palette</span><i></i></div>
 
     <div class="pal-bar">
@@ -228,7 +250,7 @@
   </section>
 
   <!-- The colour in hand: flat, or a gradient between two ends. -->
-  <section class="panel" id="inkPanel" data-for="pencil line curve circle rect fill">
+  <section class="panel" id="inkPanel" data-for="pencil line curve circle rect text fill">
     <div class="label"><span>Ink</span><i></i></div>
 
     <button class="wide toggle" id="gradOn" title="Fade the ink from one colour to another"><span class="tick"></span><span>Gradient</span></button>

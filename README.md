@@ -50,26 +50,28 @@ right out before letting go counts as finishing it.
 | **Arc** `A` | Two clicks for the ends — or one drag — then move to bend it and click to set. An arc owes its bend either way, so the drag sets the chord and hands it on to be bent. Hold `Alt` while bending to keep it symmetrical — the apex is held square above the middle of the chord. The bend may sit outside the tile and the click that sets it can land anywhere |
 | **Circle** `C` | Drag rim to rim, or click each end of a diameter — both points you place land on the circle. Hold `Alt` **as you start** to grow it from the centre instead: the first point is then the middle and the second sets the radius |
 | **Rect** `R` | Click a corner, then the opposite one; `Alt` for a square. On the **Iso** frame it draws a rhombus instead — a face of a cube |
+| **Text** `X` | Click where the letters are to start and type. They appear as you type, repeating across the plane like anything else, with a caret standing where the next letter will go. `Enter` sets them down, `Shift-Enter` takes a new line, `Esc` drops them; clicking again sets what is there and starts afresh where you clicked, so a row of labels is click, type, click. *Size* is the height of the letters against the square — 1000 is the whole of it — and *Face* cuts them from a sans, a serif or a monospace. The ink, the size and the face are read as the text is set down, so a colour or a size chosen part way through belongs to the whole word. What is set down is **outlines, not letters**: the shapes are traced and kept as polygons, so a text mark is a mark like any other — it turns, mirrors, takes a sweep, bends under the warp and exports as paths that need no font at the other end. The words themselves are not kept, so there is no going back in to fix a typo: `⌘Z` and type it again |
 | **Fill** `F` | Click an enclosed area — the boundary is traced and stored as a polygon, so it stays sharp at any zoom. On an empty tile there is nothing holding an area in, so the whole square fills, and it comes out as the ground. Click a border and that border takes the current ink. Click inside a figure that is filled already and the whole figure takes it — every fill in it and every border grouped with it — even where its border has since been moved or sized away from it. The first fill of an outlined area leaves the outline its own colour, and an already-filled area can still be cut up by new lines and its parts filled separately |
 | **Erase** `E` | Click or drag across a mark to remove it. A border answers before the interior of the mark holding it, and before a fill, so a line drawn across a filled shape can still be got at — and a mark can be rubbed out by any of its ink, including the part that has run over a neighbouring square |
 | **Warp** `W` | Click the paper to drop an anchor, and the plane bends round it — see [Warp](#warp). Drag an anchor's dot to move it and the square on its rim to size it; `Delete` removes the anchor in hand. Dragging bare paper pans |
 
 Directly under the tools is a box named for the tool in hand, holding its
 controls and no others: *Snap to grid and geometry* for the tools that snap —
-Select, Line, Arc, Circle and Rect; *Thickness* for the tools that draw strokes,
+Select, Line, Arc, Circle, Rect and Text; *Thickness* for the tools that draw strokes,
 and for Select, which sets it on everything held; *Sweep across*, while there is
 a gradient about, for the tools that put ink down and for Select; the group,
 turn, depth and clipboard buttons for Select, since they work on what it is
-holding; *Filled shapes* for Circle and Rect; *Smooth* for the pencil; and the
-warp's own controls for Warp, with the anchor held set apart inside it. The
+holding; *Filled shapes* for Circle and Rect; *Smooth* for the pencil; *Size*,
+*Face* and *Bold* for Text; and the warp's own controls for Warp, with the
+anchor held set apart inside it. The
 eraser has none, and has no box; nor has the fill, unless it holds a gradient.
 
 The same rule runs down the whole rail: controls that act on one thing are
 boxed together and named for it, so nothing reads as belonging to its
 neighbour. The colours to pick from are the **Palette**; the colour in hand is
 the **Ink**; how thick a stroke is drawn is the tool's. The Palette and the Ink
-show only for the tools that put colour down — Pencil, Line, Arc, Circle, Rect
-and Fill — and are put away for Select, Erase and Warp. The keys work whichever
+show only for the tools that put colour down — Pencil, Line, Arc, Circle, Rect,
+Text and Fill — and are put away for Select, Erase and Warp. The keys work whichever
 tool is up — `S` still switches snapping from the pencil, and a number key still
 recolours what Select is holding.
 
@@ -363,6 +365,11 @@ show tiles `T` · snapping `S` · grid size `D`
 
 `Shift` suspends snapping, or asks for it while it is off · `Alt` (or `Ctrl`)
 constrains what a tool is drawing
+
+While a caret is down, every key is a letter: the tool keys, the ink keys and
+the rest stand aside until the text is set down or dropped. The shortcuts that
+take a modifier — undo, save, select all — still answer, so nothing is out of
+reach mid-word.
 
 ### Off the table
 
