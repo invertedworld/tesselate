@@ -4140,11 +4140,9 @@
 
   /* ---------------- keyboard ---------------- */
 
-  /* T is the tile rules and has been since grouping took G, so text is
-     on X — the one letter of it left free. */
   const TOOL_KEYS = {
     ' ': 'select', p: 'pencil', l: 'line', a: 'curve',
-    c: 'circle', r: 'rect', x: 'text', f: 'fill', e: 'erase', w: 'warp',
+    c: 'circle', r: 'rect', t: 'text', f: 'fill', e: 'erase', w: 'warp',
   };
 
   window.addEventListener('keydown', (e) => {
@@ -4252,8 +4250,11 @@
     if (k === ']') { setWidth(state.width + (state.width >= 12 ? 4 : 1)); return; }
     if (k === 'g') { groupPicked(); return; }
     if (k === 'u') { ungroupPicked(); return; }
-    // Tile rules gave up G to grouping; T for tiles.
-    if (k === 't') { toggle('grid'); return; }
+    /* The tile rules have been moved twice now: they gave up G to
+       grouping, then T to text, which wants the letter it is named
+       after more than a switch does. X is what the two of them have
+       traded, and the switch itself says so. */
+    if (k === 'x') { toggle('grid'); return; }
     if (k === 's') { toggle('snap'); return; }
     // D steps through the sizes, and switches the grid on where it is
     // off — the switch itself is the way to turn it back off.
