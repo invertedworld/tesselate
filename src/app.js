@@ -356,8 +356,9 @@
     recent: [],         // ink used on the drawing, newest first
     filled: false,
     typeSize: 140,      // how tall the letters of a text mark are set
-    typeFace: 'sans',   // 'sans' | 'serif' | 'mono'
+    typeFace: 'sans',   // one of FACES, or a family found on this computer
     typeBold: false,
+    typeItalic: false,
     grid: true,
     arrows: false,      // an arrow per square, showing the turn it carries
     snap: false,
@@ -383,6 +384,7 @@
     typeSize: state.typeSize,
     typeFace: state.typeFace,
     typeBold: state.typeBold,
+    typeItalic: state.typeItalic,
     grid: state.grid,
     arrows: state.arrows,
     snap: state.snap,
@@ -3671,18 +3673,33 @@
      hundred tall is a third of a percent of it. */
   const TYPE_EPS = 1;
   const TYPE_LEAD = 1.3;    // line to line, against the size
+  /* Three faces every computer has, named for what they are rather than
+     for a font, so a drawing made on one machine is cut from something
+     close on the next. Anything else this computer holds is asked for by
+     name — see the picker. */
   const FACES = {
     sans: 'ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif',
     serif: 'ui-serif, Georgia, "Times New Roman", Times, serif',
     mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   };
+  const FACE_NAMES = { sans: 'Sans', serif: 'Serif', mono: 'Mono' };
+  // The families found on this computer, once it has been asked.
+  let localFaces = [];
 
   let typing = null;        // what is being typed, before it is set down
   let typeDirty = false;    // the letters need cutting again this frame
   let typeCanvas = null;
   let typeTrace = { sig: '' };
 
-  const typeFont = () => `${state.typeBold ? '700 ' : ''}${TYPE_PX}px ${FACES[state.typeFace] || FACES.sans}`;
+  /* A family off the picker is asked for by name, with the plain sans
+     behind it in case the font has gone since the drawing was made. */
+  function faceOf(name) {
+    if (FACES[name]) return FACES[name];
+    return `"${String(name).replace(/["\\]/g, '')}", ${FACES.sans}`;
+  }
+
+  const typeFont = () => `${state.typeItalic ? 'italic ' : ''}${state.typeBold ? '700 ' : ''}`
+    + `${TYPE_PX}px ${faceOf(state.typeFace)}`;
 
   function typeCtx() {
     if (!typeCanvas) typeCanvas = document.createElement('canvas');
@@ -3698,7 +3715,7 @@
      size or of place is then arithmetic on them rather than another
      trace. */
   function typeOutline(text) {
-    const sig = `${state.typeFace}|${state.typeBold ? 'b' : ''}|${text}`;
+    const sig = `${state.typeFace}|${state.typeBold ? 'b' : ''}${state.typeItalic ? 'i' : ''}|${text}`;
     if (typeTrace.sig === sig) return typeTrace;
     const lines = text.split('\n');
     const lead = typeLead();
@@ -3760,6 +3777,7 @@
         size: state.typeSize,
         face: state.typeFace,
         bold: state.typeBold || undefined,
+        italic: state.typeItalic || undefined,
         at: t.at,
         // An upright mark that has not been moved says so by saying
         // nothing, which keeps the file clean.
@@ -3807,8 +3825,9 @@
   function openTyping(mark, tile) {
     const t = mark.type;
     state.typeSize = clamp(Math.round(t.size), 20, 400);
-    if (FACES[t.face]) state.typeFace = t.face;
+    if (t.face && typeof t.face === 'string') state.typeFace = t.face;
     state.typeBold = !!t.bold;
+    state.typeItalic = !!t.italic;
     syncType();
     syncToggles();
     if (mark.color) {
@@ -5357,12 +5376,66 @@
      is being typed. Size and face are read afresh whenever the letters
      are traced, so both answer while a word is half typed. */
   const typeSizeInput = document.getElementById('typeSize');
+  const faceSel = document.getElementById('typeFace');
+  const FIND_FACES = '\u0000find';
+
+  /* The picker. The three faces are always in it; under them go whatever
+     families this computer holds, once it has been asked for them —
+     which it is only when the last entry is chosen, since asking raises
+     a permission of the browser's own and that should follow from
+     something the hand did rather than from opening a drawing.
+
+     A family chosen before is kept in the list whether or not it has
+     been asked for again, so a drawing opened on a fresh morning still
+     says what it was set in. The letters are traced either way, so a
+     face that has since gone off the machine costs the marks nothing —
+     only a re-cut would fall back to the plain sans. */
+  function buildFaces() {
+    const chosen = state.typeFace;
+    faceSel.innerHTML = '';
+    const add = (to, value, label) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      to.appendChild(o);
+    };
+    for (const k of ['sans', 'serif', 'mono']) add(faceSel, k, FACE_NAMES[k]);
+    const named = localFaces.slice();
+    if (!FACES[chosen] && !named.includes(chosen)) named.unshift(chosen);
+    if (named.length) {
+      const g = document.createElement('optgroup');
+      g.label = 'On this computer';
+      for (const f of named) add(g, f, f);
+      faceSel.appendChild(g);
+    }
+    if (window.queryLocalFonts && !localFaces.length) {
+      add(faceSel, FIND_FACES, named.length ? 'Look again\u2026' : 'Fonts on this computer\u2026');
+    }
+    faceSel.value = chosen;
+  }
+
+  async function findFaces() {
+    try {
+      const got = await window.queryLocalFonts();
+      const seen = new Set();
+      localFaces = [];
+      for (const f of got) if (f.family && !seen.has(f.family)) { seen.add(f.family); localFaces.push(f.family); }
+      localFaces.sort((a, b) => a.localeCompare(b));
+      buildFaces();
+      flash(localFaces.length
+        ? `${localFaces.length} faces on this computer`
+        : 'No faces came back');
+    } catch (err) {
+      // Refused, or the browser has no such thing. Either way the three
+      // faces are still there and nothing is broken.
+      flash('The browser did not hand its fonts over');
+    }
+  }
+
   function syncType() {
     typeSizeInput.value = state.typeSize;
     document.getElementById('typeSizeVal').textContent = state.typeSize;
-    for (const b of document.getElementById('typeFaces').children) {
-      b.classList.toggle('on', b.dataset.face === state.typeFace);
-    }
+    if (faceSel.value !== state.typeFace) buildFaces();
   }
   typeSizeInput.addEventListener('input', () => {
     state.typeSize = clamp(Math.round(+typeSizeInput.value), 20, 400);
@@ -5371,20 +5444,25 @@
     saveSoon();
   });
   typeSizeInput.addEventListener('change', () => typeSizeInput.blur());
-  document.getElementById('typeFaces').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-face]');
-    if (!b) return;
-    state.typeFace = b.dataset.face;
-    syncType();
+  faceSel.addEventListener('change', () => {
+    if (faceSel.value === FIND_FACES) {
+      faceSel.value = state.typeFace;
+      faceSel.blur();
+      findFaces();
+      return;
+    }
+    state.typeFace = faceSel.value;
     if (typing) retype();
-    b.blur();
+    faceSel.blur();
     saveSoon();
   });
-  document.getElementById('typeBoldBtn').addEventListener('click', (e) => {
-    // `toggle` has already flipped it; this only takes the focus back.
-    if (typing) retype();
-    e.currentTarget.blur();
-  });
+  for (const id of ['typeBoldBtn', 'typeItalicBtn']) {
+    document.getElementById(id).addEventListener('click', (e) => {
+      // `toggle` has already flipped it; this only takes the focus back.
+      if (typing) retype();
+      e.currentTarget.blur();
+    });
+  }
 
   // Letting go of any slider closes its run, so the next one is its own
   // step to undo.
@@ -5778,6 +5856,7 @@
     state.typeSize = DEFAULTS.typeSize;
     state.typeFace = DEFAULTS.typeFace;
     state.typeBold = DEFAULTS.typeBold;
+    state.typeItalic = DEFAULTS.typeItalic;
     syncType();
     setDiag(DEFAULTS.diag, true);
     setWidth(DEFAULTS.width);
@@ -5917,7 +5996,8 @@
       },
       ink: {
         color: state.color, across: state.across, width: state.width, filled: state.filled,
-        typeSize: state.typeSize, typeFace: state.typeFace, typeBold: state.typeBold,
+        typeSize: state.typeSize, typeFace: state.typeFace,
+        typeBold: state.typeBold, typeItalic: state.typeItalic,
       },
       palette: {
         name: state.palette,
@@ -6019,8 +6099,9 @@
     const ink = d.ink || {};
     if (typeof ink.filled === 'boolean') state.filled = ink.filled;
     if (typeof ink.typeBold === 'boolean') state.typeBold = ink.typeBold;
+    if (typeof ink.typeItalic === 'boolean') state.typeItalic = ink.typeItalic;
     if (typeof ink.typeSize === 'number') state.typeSize = clamp(Math.round(ink.typeSize), 20, 400);
-    if (FACES[ink.typeFace]) state.typeFace = ink.typeFace;
+    if (ink.typeFace && typeof ink.typeFace === 'string') state.typeFace = ink.typeFace.slice(0, 80);
     syncType();
     if (typeof ink.width === 'number') setWidth(ink.width);
     const across = ink.across || acrossWritten(ink.color);
@@ -6294,7 +6375,8 @@
         localStorage.setItem(KEY, JSON.stringify({
           shapes: state.shapes, pattern: state.pattern, tool: state.tool,
           color: state.color, across: state.across, width: state.width, filled: state.filled,
-          typeSize: state.typeSize, typeFace: state.typeFace, typeBold: state.typeBold,
+          typeSize: state.typeSize, typeFace: state.typeFace,
+          typeBold: state.typeBold, typeItalic: state.typeItalic,
           palette: state.palette, palettes: state.palettes, recent: state.recent,
           grid: state.grid, arrows: state.arrows, snap: state.snap, sub: state.sub,
           subLast: state.subLast, diag: state.diag, warp: state.warp, smooth: state.smooth,
@@ -6334,8 +6416,8 @@
     if (across === 'shape' || across === 'tile') state.across = across;
     if (typeof d.width === 'number') state.width = clamp(d.width, 1, 64);
     if (typeof d.typeSize === 'number') state.typeSize = clamp(Math.round(d.typeSize), 20, 400);
-    if (FACES[d.typeFace]) state.typeFace = d.typeFace;
-    for (const f of ['filled', 'typeBold', 'grid', 'arrows', 'snap']) {
+    if (d.typeFace && typeof d.typeFace === 'string') state.typeFace = d.typeFace.slice(0, 80);
+    for (const f of ['filled', 'typeBold', 'typeItalic', 'grid', 'arrows', 'snap']) {
       if (typeof d[f] === 'boolean') state[f] = d[f];
     }
     if (typeof d.diag === 'boolean') state.diag = d.diag ? 'plane' : 'off';
@@ -6363,6 +6445,7 @@
   syncToggles();
   syncWarpPanel();
   syncSmooth();
+  buildFaces();
   syncType();
   resize();
   afterChange();

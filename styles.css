@@ -331,7 +331,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   transform: rotate(45deg) translateY(-1px);
   pointer-events: none;
 }
-#palSel {
+#palSel, #typeFace {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -347,8 +347,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   cursor: pointer;
   text-overflow: ellipsis;
 }
-#palSel:hover { background: var(--ink-06); }
-#palSel:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#palSel:hover, #typeFace:hover { background: var(--ink-06); }
+#palSel:focus-visible,
+#typeFace:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The face row is a label and a picker, so the picker takes the room the
+   chips used to, rather than the whole width a palette's does. */
+.row > .sel { height: 26px; }
 
 .mini {
   padding: 0 8px;

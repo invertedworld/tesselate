@@ -128,17 +128,20 @@
         <input type="range" id="typeSize" min="20" max="400" step="2" value="140" aria-label="Text size">
         <span class="mono num" id="typeSizeVal">140</span>
       </div>
+      <!-- Three faces every computer has, and beneath them whatever else
+           this one holds, once it has been asked. -->
       <div class="row" data-for="text" title="The face the letters are cut from">
         <span class="mono tiny">Face</span>
-        <div class="modes" id="typeFaces">
-          <button data-face="sans" title="Plain, even-weighted letters">Sans</button>
-          <button data-face="serif" title="Letters with serifs and a varying stroke">Serif</button>
-          <button data-face="mono" title="Every letter the same width">Mono</button>
-        </div>
+        <div class="sel"><select id="typeFace" aria-label="Text face"></select></div>
       </div>
-      <button class="wide toggle" data-toggle="typeBold" id="typeBoldBtn" data-for="text">
-        <span class="tick"></span><span>Bold</span>
-      </button>
+      <div class="grid2 binders" data-for="text">
+        <button class="wide toggle" data-toggle="typeBold" id="typeBoldBtn" title="Cut the letters from the heavy face">
+          <span class="tick"></span><span>Bold</span>
+        </button>
+        <button class="wide toggle" data-toggle="typeItalic" id="typeItalicBtn" title="Cut them from the sloped face">
+          <span class="tick"></span><span>Italic</span>
+        </button>
+      </div>
       <div class="row slide" id="smoothRow" data-for="pencil" title="How far a stroke is tidied when you let go — 0 keeps it exactly as drawn">
         <span class="mono tiny">Smooth</span>
         <input type="range" id="smooth" min="0" max="100" step="1" value="25" aria-label="Pencil smoothing">
