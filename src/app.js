@@ -2136,13 +2136,26 @@
           : newStroke({ kind: 'rect', x: p.x, y: p.y, w: 0, h: 0, filled: state.filled });
         break;
       case 'text': {
-        /* A click sets down whatever is being typed. Landing on letters
-           already down it opens those instead of starting a caret on top
-           of them; landing on bare paper it starts again where it fell,
-           so a row of labels is click, type, click. */
+        /* A click inside what is being typed moves the caret into it and
+           nothing else. Otherwise it sets the letters down: landing on
+           text already there it opens that, at the letter pointed at,
+           and landing on bare paper it starts again where it fell, so a
+           row of labels is click, type, click.
+
+           What is being typed answers for itself here; the mark it came
+           from does not, being off the plane until it is set down. */
+        if (typing && draft) {
+          const live = hitTest(w, { textOnly: true, anyTile: true, extra: draft, skip: typing.was });
+          if (live === draft) {
+            typing.caret = caretFor(typing, w, { ...(hitTile || activeTile) });
+            requestDraw();
+            mode = null;
+            return true;
+          }
+        }
         endTyping();
         const on = hitTest(w, { textOnly: true, anyTile: true });
-        if (on) openTyping(on, { ...(hitTile || activeTile) });
+        if (on) openTyping(on, { ...(hitTile || activeTile) }, w);
         else startTyping(p, { ...activeTile });
         mode = null;
         return true;
@@ -3177,7 +3190,9 @@
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     let hit = null;
-    const list = pass === 'fill' && fills ? fills : state.shapes;
+    const list = pass === 'fill' && fills ? fills
+      : pass === 'type' && o.extra ? state.shapes.concat([o.extra])
+      : state.shapes;
     for (let k = list.length - 1; k >= 0; k--) {
       const s = list[k];
       const path = pathOf(s);
@@ -3200,7 +3215,7 @@
            the letters: a letter is mostly the paper between its strokes,
            and hunting for a stem to land on is no way to get at a word.
            Asked from the top down, the nearest to hand answers. */
-        if (!s.type) continue;
+        if (s === o.skip || (!s.type && s !== o.extra)) continue;
         const b = shapeBBox(s);
         if (b && p.x >= b.x0 && p.x <= b.x1 && p.y >= b.y0 && p.y <= b.y1) { hit = s; break; }
       } else {
@@ -3822,7 +3837,7 @@
      picture until it is set down again, so what is on the plane while
      you type is what you will get: in the place, at the turn and in the
      mirror the old one had. */
-  function openTyping(mark, tile) {
+  function openTyping(mark, tile, w) {
     const t = mark.type;
     state.typeSize = clamp(Math.round(t.size), 20, 400);
     if (t.face && typeof t.face === 'string') state.typeFace = t.face;
@@ -3838,9 +3853,11 @@
       setColor(mark.color, true, true);
       syncAcross();
     }
-    // The caret goes to the end of the words, where typing carries on
-    // from; the arrows take it back into them.
+    /* The caret goes where the click fell, so a word is opened at the
+       letter you pointed at. It is worked out after the size and the
+       face are in hand, since both go into the measuring. */
     typing = { id: mark.id, at: t.at, m: t.m || IDENT, tile, text: t.text, caret: t.text.length, was: mark };
+    if (w) typing.caret = caretFor(typing, w, tile);
     setHint(HINTS.typing, true);
     retype();
   }
@@ -3873,6 +3890,37 @@
     usedNow();
     flash('Text set down — it is a mark now, like any other');
     return true;
+  }
+
+  /* Which letter a click falls before. The point is taken back through
+     the mark's own affine into the upright letters it was cut from — so
+     a word that has been turned or mirrored is read as though it never
+     had been — then to the line it lands on, and within that line to
+     whichever gap between letters it is nearest.
+
+     `tile` is the square whose copy was clicked, which may be a
+     neighbour's: the plane is one tile over and over, so the click is
+     put back into the coordinates the mark itself is kept in. */
+  function caretFor(t, w, tile) {
+    const home = frameTile();
+    const q = mapAffine(invAffine(t.m || IDENT),
+      unplaceIn(placeIn(w, home.i, home.j), tile.i, tile.j));
+    const k = state.typeSize / TYPE_PX;
+    const lines = t.text.split('\n');
+    const row = clamp(Math.floor((q.y - t.at.y) / (typeLead() * k)), 0, lines.length - 1);
+    const line = lines[row];
+    const want = (q.x - t.at.x) / k;
+    const g = typeCtx();
+    let col = 0, near = Infinity;
+    for (let i = 0; i <= line.length; i++) {
+      const off = Math.abs(g.measureText(line.slice(0, i)).width - want);
+      if (off >= near) continue;
+      near = off;
+      col = i;
+    }
+    let at = 0;
+    for (let r = 0; r < row; r++) at += lines[r].length + 1;
+    return clamp(at + col, 0, t.text.length);
   }
 
   /* Where the caret stands in what has been typed: which line it is on,

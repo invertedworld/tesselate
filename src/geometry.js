@@ -434,6 +434,16 @@ function mulAffine(m, n) {
   ];
 }
 
+/* The way back: a point on the plane into the upright letters a text
+   mark was cut from. A mark that has been flattened to nothing has no
+   way back, and is left where it is. */
+function invAffine(m) {
+  const det = m[0] * m[3] - m[2] * m[1];
+  if (!det) return IDENT;
+  const a = m[3] / det, b = -m[1] / det, c = -m[2] / det, d = m[0] / det;
+  return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
+}
+
 /* Carry a mark's recipe through whatever has just been done to its
    points. A mark with none is left alone. */
 function keepRecipe(out, s, m) {
