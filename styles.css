@@ -651,6 +651,8 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 16px; border: 0; bor
 }
 .chip.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 
+.shape-row { margin: 0 0 10px; justify-content: space-between; }
+.shape-row + .confirm { margin: -3px 0 10px; }
 .block-row { margin: 11px 0 9px; justify-content: space-between; }
 .sizes { display: flex; gap: 4px; }
 .sizes button {
@@ -691,6 +693,14 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 16px; border: 0; bor
   font-size: 14px;
   fill: currentColor;
 }
+.cell svg .outline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  opacity: 0.55;
+}
+.pattern-grid:not([data-shape="square"]) .cell svg { width: 88%; height: 88%; }
 .cell:hover svg { color: var(--ink); }
 .cell.src { border-color: var(--ink-42); background: rgba(236, 234, 228, 0.1); }
 .cell.src svg { color: var(--accent); }

@@ -22,7 +22,7 @@
      tile    in every square, turned with it — the warp repeats exactly
              as the drawing does, so what comes out is still a tiling
 
-   Needs geometry.js (T, mod, n2, simplify) and patterns.js (rotAt).
+   Needs geometry.js (T, mod, n2, simplify) and patterns.js (the tilings).
    ------------------------------------------------------------------ */
 
 const WARP_BULGE = 1.5;          // full bulge: the centre drawn e^1.5, about 4.5 times up
@@ -31,17 +31,11 @@ const WARP_TWIRL = 2 * Math.PI;  // full twirl: the centre turned once round
 const clamp01 = (v) => (v > 0 ? (v < 1 ? v : 1) : 0);
 
 function placeOn(p, i, j, pattern) {
-  const r = rotAt(pattern, i, j);
-  let dx = p.x - T / 2, dy = p.y - T / 2;
-  for (let k = r; k > 0; k--) { const t = dx; dx = -dy; dy = t; }
-  return { x: dx + T / 2 + i * T, y: dy + T / 2 + j * T };
+  return tilingOf(pattern).place(p, pattern, i, j);
 }
 
 function takeOff(w, i, j, pattern) {
-  const r = rotAt(pattern, i, j);
-  let dx = w.x - i * T - T / 2, dy = w.y - j * T - T / 2;
-  for (let k = (4 - r) % 4; k > 0; k--) { const t = dx; dx = -dy; dy = t; }
-  return { x: dx + T / 2, y: dy + T / 2 };
+  return tilingOf(pattern).unplace(w, pattern, i, j);
 }
 
 const NO_WARP = {
@@ -63,6 +57,7 @@ function makeWarp(spec, pattern, skip) {
   if (!live.length) return NO_WARP;
 
   const A = live.length, n = pattern.n;
+  const tl = tilingOf(pattern), per = tl.per(n);
   const R2 = new Float64Array(A), KB = new Float64Array(A), KT = new Float64Array(A);
   let reach = 0, minR = Infinity, mag = 1;
   live.forEach((a, k) => {
@@ -74,12 +69,12 @@ function makeWarp(spec, pattern, skip) {
     mag = Math.max(mag, Math.exp(Math.abs(KB[k])) * (1 + Math.abs(KT[k])));
   });
 
-  /* Where each disc sits, listed per square of the block: every disc —
-     the square's own or a neighbour's — that reaches into that square,
-     as an offset from the square's corner. A point asks only the list
-     for the square it is in. On the plane there is one list, of every
-     anchor where it was put. A square anywhere is its block square moved
-     whole blocks, so the lists serve the whole plane. */
+  /* Where each disc sits, listed per tile of the block: every disc —
+     the tile's own or a neighbour's — that reaches into that tile, as
+     an offset from the tile's middle. A point asks only the list for
+     the tile it is in. On the plane there is one list, of every anchor
+     where it was put. A tile anywhere is its block tile moved whole
+     blocks, so the lists serve the whole plane. */
   const XS = [], YS = [], KS = [];
   if (!tiled) {
     XS.push(Float64Array.from(live, (a) => a.x));
@@ -87,26 +82,17 @@ function makeWarp(spec, pattern, skip) {
     KS.push(Int32Array.from(live, (a, k) => k));
   } else {
     const ring = Math.ceil(reach / T);
-    const home = [];                    // each anchor within its own block square
     for (let cj = 0; cj < n; cj++) {
-      for (let ci = 0; ci < n; ci++) {
-        home.push(live.map((a) => {
-          const q = placeOn(a, ci, cj, pattern);
-          return { x: q.x - ci * T, y: q.y - cj * T };
-        }));
-      }
-    }
-    for (let cj = 0; cj < n; cj++) {
-      for (let ci = 0; ci < n; ci++) {
+      for (let ci = 0; ci < per; ci++) {
+        const o = tl.origin(ci, cj);
         const xs = [], ys = [], ks = [];
-        for (let dj = -ring; dj <= ring; dj++) {
-          for (let di = -ring; di <= ring; di++) {
-            const there = home[mod(cj + dj, n) * n + mod(ci + di, n)];
-            for (let k = 0; k < A; k++) {
-              const x = there[k].x + di * T, y = there[k].y + dj * T;
-              const dx = Math.max(-x, 0, x - T), dy = Math.max(-y, 0, y - T);
-              if (dx * dx + dy * dy < R2[k]) { xs.push(x); ys.push(y); ks.push(k); }
-            }
+        for (const c of tl.around(ci, cj, ring)) {
+          for (let k = 0; k < A; k++) {
+            const q = placeOn(live[k], c.i, c.j, pattern);
+            const x = q.x - o.x, y = q.y - o.y;
+            // Near enough the tile — within its round — to be asked about.
+            const d = Math.max(0, Math.hypot(x, y) - tl.outR);
+            if (d * d < R2[k]) { xs.push(x); ys.push(y); ks.push(k); }
           }
         }
         XS.push(Float64Array.from(xs));
@@ -130,9 +116,10 @@ function makeWarp(spec, pattern, skip) {
   function vel(x, y) {
     let vx = 0, vy = 0, ox = 0, oy = 0, cell = 0;
     if (tiled) {
-      const i = Math.floor(x / T), j = Math.floor(y / T);
-      ox = i * T; oy = j * T;
-      cell = mod(j, n) * n + mod(i, n);
+      const c = cellAt(pattern, { x, y });
+      const o = tl.origin(c.i, c.j);
+      ox = o.x; oy = o.y;
+      cell = tl.index(pattern, c.i, c.j);
     }
     const xs = XS[cell], ys = YS[cell], ks = KS[cell];
     for (let m = 0; m < xs.length; m++) {
@@ -181,13 +168,16 @@ function makeWarp(spec, pattern, skip) {
       return false;
     };
     if (!tiled) return hit(XS[0], YS[0], KS[0], 0, 0);
-    const i0 = Math.floor(b.x0 / T), i1 = Math.floor(b.x1 / T);
-    const j0 = Math.floor(b.y0 / T), j1 = Math.floor(b.y1 / T);
-    if ((i1 - i0 + 1) * (j1 - j0 + 1) > 4096) return true;
-    for (let j = j0; j <= j1; j++) {
-      for (let i = i0; i <= i1; i++) {
-        const cell = mod(j, n) * n + mod(i, n);
-        if (hit(XS[cell], YS[cell], KS[cell], i * T, j * T)) return true;
+    const g = tl.square ? 0 : tl.outR;
+    const r = tl.square
+      ? { i0: Math.floor(b.x0 / T), i1: Math.floor(b.x1 / T), j0: Math.floor(b.y0 / T), j1: Math.floor(b.y1 / T) }
+      : tl.range(b.x0 - g, b.y0 - g, b.x1 + g, b.y1 + g);
+    if ((r.i1 - r.i0 + 1) * (r.j1 - r.j0 + 1) > 4096) return true;
+    for (let j = r.j0; j <= r.j1; j++) {
+      for (let i = r.i0; i <= r.i1; i++) {
+        const cell = tl.index(pattern, i, j);
+        const o = tl.origin(i, j);
+        if (hit(XS[cell], YS[cell], KS[cell], o.x, o.y)) return true;
       }
     }
     return false;
@@ -195,7 +185,7 @@ function makeWarp(spec, pattern, skip) {
 
   return {
     active: true,
-    sig: JSON.stringify([amt, tiled, n, pattern.cells, skip, live.map((a) => [a.x, a.y, a.r, a.bulge, a.twirl])]),
+    sig: JSON.stringify([amt, tiled, tl.id, n, pattern.cells, skip, live.map((a) => [a.x, a.y, a.r, a.bulge, a.twirl])]),
     tiled, reach, minR, mag, steps,
     seg: minR / 3,     // no straight run longer than this goes through a disc unsplit
     warp: (p) => flow(p, 1),

@@ -55,7 +55,7 @@
     ];
   }
 
-  const PINWHEEL = { n: 2, cells: cellsFromPreset(PRESETS[1]) };
+  const PINWHEEL = patternFromPreset(presetsFor('square')[1], 'square');
 
   // The drawing left on the table, when the lab is served from the same place.
   function tableDrawing() {
@@ -65,7 +65,8 @@
       const shapes = d.shapes.filter((s) => s && s.kind);
       if (!shapes.length) return null;
       const p = d.pattern;
-      const ok = p && p.n >= 1 && p.n <= 4 && Array.isArray(p.cells) && p.cells.length === p.n * p.n;
+      // The lab lays squares only; a drawing on another tile gets the demo block.
+      const ok = validPattern(p) && shapeOf(p) === 'square';
       return { shapes, pattern: ok ? p : PINWHEEL };
     } catch (err) {
       return null;

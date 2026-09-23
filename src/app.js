@@ -261,15 +261,35 @@
     return !!set && set.has(k);
   };
 
+  /* The shape of the tile and how its copies lie are the tiling's —
+     see patterns.js. Everything here asks it rather than assuming a
+     square: where copy (i, j) puts a point, which copy a point of the
+     plane is on, and which copies lie around one. */
+  const tiling = () => tilingOf(state.pattern);
+  const patternSig = () => `${shapeOf(state.pattern)}:${state.pattern.n}:${state.pattern.cells.join('')}`;
+
   function placeIn(p, i, j) {
-    const r = rotAt(state.pattern, i, j);
-    let dx = p.x - T / 2, dy = p.y - T / 2;
-    for (let k = r; k > 0; k--) { const t = dx; dx = -dy; dy = t; }
-    return { x: dx + T / 2 + i * T, y: dy + T / 2 + j * T };
+    return tiling().place(p, state.pattern, i, j);
   }
 
+  // World back into one copy's own frame — the inverse of placeIn.
+  function unplaceIn(w, i, j) {
+    return tiling().unplace(w, state.pattern, i, j);
+  }
+
+  const cellOf = (w) => cellAt(state.pattern, w);
+
+  // Put copy (i, j)'s placement on a context, over what is there.
+  function intoTile(g, i, j) {
+    const m = tiling().matrix(state.pattern, i, j);
+    g.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  }
+
+  // The copies around (i, j) whose marks can reach into it, itself first.
+  const around = (i, j, pad) => tiling().around(i, j, pad);
+
   function findCrossJunctions() {
-    const sig = `${state.pattern.n}:${state.pattern.cells.join('')}`;
+    const sig = patternSig();
     if (crossFor && crossFor.list === state.shapes && crossFor.sig === sig) return;
     crossFor = { list: state.shapes, sig };
     crossJunctions = new Map();
@@ -277,18 +297,17 @@
     const marks = state.shapes.filter((s) => s.layer === 'stroke' && !s.filled && ROUNDABLE[s.kind]);
     if (!pad || !marks.length) return;
 
-    const n = state.pattern.n;
+    const n = state.pattern.n, per = tiling().per(n);
     for (let b = 0; b < n; b++) {
-      for (let a = 0; a < n; a++) {
+      for (let a = 0; a < per; a++) {
         const seen = new Map();
-        for (let dj = -pad; dj <= pad; dj++) {
-          for (let di = -pad; di <= pad; di++) {
-            for (const s of marks) {
-              for (const p of endpointsOf(s)) {
-                const k = jkey(placeIn(p, a + di, b + dj));
-                const at = seen.get(k);
-                if (at) at.push([di, dj, p]); else seen.set(k, [[di, dj, p]]);
-              }
+        for (const c of around(a, b, pad)) {
+          const di = c.i - a, dj = c.j - b;
+          for (const s of marks) {
+            for (const p of endpointsOf(s)) {
+              const k = jkey(placeIn(p, c.i, c.j));
+              const at = seen.get(k);
+              if (at) at.push([di, dj, p]); else seen.set(k, [[di, dj, p]]);
             }
           }
         }
@@ -369,7 +388,7 @@
        is replaced whole on every change and never edited in place, so an
        undo step can simply keep the one it had. */
     warp: { amount: 1, repeat: 'plane', ink: 'swell', anchors: [] },
-    pattern: { n: 2, cells: cellsFromPreset(PRESETS[1]) },
+    pattern: patternFromPreset(presetsFor('square')[1], 'square'),
     view: { scale: 0.5, x: 0, y: 0, rot: 0 },
   };
 
@@ -392,7 +411,7 @@
     subLast: state.subLast,
     diag: state.diag,
     warp: state.warp,
-    pattern: { n: state.pattern.n, cells: state.pattern.cells.slice() },
+    pattern: { shape: 'square', n: state.pattern.n, cells: state.pattern.cells.slice() },
     view: { ...state.view },
   };
 
@@ -489,7 +508,7 @@
   let liveWarp = NO_WARP;
   let liveWarpFor = { warp: null, cells: '' };
   function warpField() {
-    const cells = `${state.pattern.n}:${state.pattern.cells.join('')}`;
+    const cells = patternSig();
     if (liveWarpFor.warp !== state.warp || liveWarpFor.cells !== cells) {
       liveWarp = makeWarp(state.warp, state.pattern);
       liveWarpFor = { warp: state.warp, cells };
@@ -507,9 +526,8 @@
   /* Any square can be drawn in: whichever one the pointer is over
      becomes the drawing surface. Marks are still kept in one tile's
      coordinates, so a point is mapped back through that square's own
-     placement and quarter-turn — draw in a turned tile and the mark
-     lands where you put it. The turns are exact right angles, so this
-     is done by swapping components rather than with sin and cos. */
+     placement and turn — draw in a turned tile and the mark lands
+     where you put it. */
   let activeTile = { i: 0, j: 0 };   // the square the grid is shown on
   let drawTile = null;               // the square a mark in progress belongs to
 
@@ -519,26 +537,20 @@
      lattice is the same in every square, so the one on show always
      agrees with what the mark is snapping to. */
   const frameTile = () => drawTile || activeTile;
-  const tileRot = () => rotAt(state.pattern, frameTile().i, frameTile().j);
 
   function toTileSpace(w) {
     const f = frameTile();
-    let dx = w.x - f.i * T - T / 2;
-    let dy = w.y - f.j * T - T / 2;
-    for (let k = tileRot(); k > 0; k--) { const t = dx; dx = dy; dy = -t; }
-    return { x: dx + T / 2, y: dy + T / 2 };
+    return unplaceIn(w, f.i, f.j);
   }
 
   function fromTileSpace(p) {
     const f = frameTile();
-    let dx = p.x - T / 2, dy = p.y - T / 2;
-    for (let k = tileRot(); k > 0; k--) { const t = dx; dx = -dy; dy = t; }
-    return { x: dx + T / 2 + f.i * T, y: dy + T / 2 + f.j * T };
+    return placeIn(p, f.i, f.j);
   }
 
   function updateActive(w) {
     if (!draft && !pending && !moving && !lasso && !grip) drawTile = null;
-    const i = Math.floor(w.x / T), j = Math.floor(w.y / T);
+    const { i, j } = cellOf(w);
     if (i !== activeTile.i || j !== activeTile.j) {
       activeTile = { i, j };
       requestDraw();
@@ -549,10 +561,7 @@
 
   // A few pixels of slack: marks that start right on the boundary are
   // the whole point of a tiling, so the edge should draw, not pan.
-  const insideTile = (w, slackPx) => {
-    const g = (slackPx || 0) / state.view.scale;
-    return w.x >= -g && w.y >= -g && w.x <= T + g && w.y <= T + g;
-  };
+  const insideTile = (w, slackPx) => tiling().inside(w, (slackPx || 0) / state.view.scale);
 
   function minScale() {
     if (!cw || !ch) return 0.02;
@@ -569,9 +578,9 @@
     v.scale = clamp(s, minScale(), 8);
     // put the tile's centre in the middle of the view, whatever the angle
     const c = Math.cos(v.rot), n = Math.sin(v.rot);
-    const mid = (T / 2) * v.scale;
-    v.x = cw / 2 - (mid * c - mid * n);
-    v.y = ch / 2 - (mid * n + mid * c);
+    const { x: mx, y: my } = tiling().c0;
+    v.x = cw / 2 - (mx * c - my * n) * v.scale;
+    v.y = ch / 2 - (mx * n + my * c) * v.scale;
     requestDraw();
   }
 
@@ -698,32 +707,29 @@
     const world = placeIn(p, home.i, home.j);
     const reach = 1 + Math.min(overhang(state.shapes), 2);
 
-    for (let dj = -reach; dj <= reach; dj++) {
-      for (let di = -reach; di <= reach; di++) {
-        const i = home.i + di, j = home.j + dj;
-        const q = unplaceIn(world, i, j);
-        if (q.x < bb.x0 - tol || q.x > bb.x1 + tol
-          || q.y < bb.y0 - tol || q.y > bb.y1 + tol) continue;
-        const back = (t, kind) => {
-          const w = placeIn(t, i, j);
-          const h = unplaceIn(w, home.i, home.j);
-          h.kind = kind;
-          return h;
-        };
-        for (const sh of state.shapes) {
-          if (sh.layer !== 'stroke') continue;
-          for (const t of snapPointsOf(sh)) consider(back(t, t.kind));
-          /* And anywhere along the mark itself, not only the points that
-             have names. Without this, a click away from an end or a
-             middle had nothing to catch on and fell through to the
-             lattice — so with the lattice off there was nothing, and
-             with it on what looked like snapping to the mark was really
-             snapping to a grid point that happened to lie under it.
-             Edges rank last, so an end still wins wherever one is in
-             reach. */
-          const near = nearestOnShape(sh, q);
-          if (near) consider(back(near.p, 'edge'));
-        }
+    for (const { i, j } of around(home.i, home.j, reach)) {
+      const q = unplaceIn(world, i, j);
+      if (q.x < bb.x0 - tol || q.x > bb.x1 + tol
+        || q.y < bb.y0 - tol || q.y > bb.y1 + tol) continue;
+      const back = (t, kind) => {
+        const w = placeIn(t, i, j);
+        const h = unplaceIn(w, home.i, home.j);
+        h.kind = kind;
+        return h;
+      };
+      for (const sh of state.shapes) {
+        if (sh.layer !== 'stroke') continue;
+        for (const t of snapPointsOf(sh)) consider(back(t, t.kind));
+        /* And anywhere along the mark itself, not only the points that
+           have names. Without this, a click away from an end or a
+           middle had nothing to catch on and fell through to the
+           lattice — so with the lattice off there was nothing, and
+           with it on what looked like snapping to the mark was really
+           snapping to a grid point that happened to lie under it.
+           Edges rank last, so an end still wins wherever one is in
+           reach. */
+        const near = nearestOnShape(sh, q);
+        if (near) consider(back(near.p, 'edge'));
       }
     }
     return best;
@@ -781,12 +787,39 @@
        from inside it: the range need only reach as far out as the discs. */
     const g = warpField().reach;
     x0 -= g; y0 -= g; x1 += g; y1 += g;
+    const t = tiling();
+    const r = t.square
+      ? { i0: Math.floor(x0 / T), i1: Math.floor(x1 / T), j0: Math.floor(y0 / T), j1: Math.floor(y1 / T) }
+      : t.range(x0, y0, x1, y1);
     return {
-      i0: Math.floor(x0 / T), i1: Math.floor(x1 / T),
-      j0: Math.floor(y0 / T), j1: Math.floor(y1 / T),
+      ...r,
       wx0: x0, wy0: y0, wx1: x1, wy1: y1,
       step: T * state.view.scale,
     };
+  }
+
+  /* Every copy whose ink can show in the range, when a mark may run
+     `pad` tiles past its own. The square's range is exact; the other
+     tilings' lattices lie aslant, so theirs is a parallelogram round the
+     view and the copies wholly off it are dropped here. */
+  function cellsOver(R, pad) {
+    const t = tiling();
+    const out = [];
+    if (t.square) {
+      for (let j = R.j0 - pad; j <= R.j1 + pad; j++) {
+        for (let i = R.i0 - pad; i <= R.i1 + pad; i++) out.push([i, j]);
+      }
+      return out;
+    }
+    const g = pad * T + t.outR;
+    const r = t.range(R.wx0 - g, R.wy0 - g, R.wx1 + g, R.wy1 + g);
+    for (let j = r.j0; j <= r.j1; j++) {
+      for (let i = r.i0; i <= r.i1; i++) {
+        const o = t.origin(i, j);
+        if (o.x >= R.wx0 - g && o.x <= R.wx1 + g && o.y >= R.wy0 - g && o.y <= R.wy1 + g) out.push([i, j]);
+      }
+    }
+    return out;
   }
 
   /* Overlay rules are given in world coordinates and stroked in screen
@@ -864,15 +897,24 @@
      to reach further than the view does. Capped, since a very long mark
      would otherwise have us painting the whole plane. */
   function overhang(list) {
-    let lo = 0, hi = T;
+    const t = tiling();
+    let lo = 0, hi = T, out = false;
     for (const sh of list) {
       const b = shapeBBox(sh);
       if (!b) continue;
       const pen = (sh.width || 0) / 2;
       lo = Math.min(lo, b.x0 - pen, b.y0 - pen);
       hi = Math.max(hi, b.x1 + pen, b.y1 + pen);
+      /* A tile that is not the square leaves corners of the square to
+         its neighbours, so a mark can stay inside the square and still
+         run onto the next tile. */
+      if (!t.square && !out) {
+        out = [[b.x0 - pen, b.y0 - pen], [b.x1 + pen, b.y0 - pen], [b.x0 - pen, b.y1 + pen], [b.x1 + pen, b.y1 + pen]]
+          .some(([x, y]) => !t.inside({ x, y }));
+      }
     }
-    return clamp(Math.max(Math.ceil(-lo / T), Math.ceil((hi - T) / T)), 0, 3);
+    const far = Math.max(Math.ceil(-lo / T), Math.ceil((hi - T) / T), out ? 1 : 0);
+    return clamp(far, 0, 3);
   }
 
   function drawAll() {
@@ -908,23 +950,17 @@
     ctx.lineJoin = 'round';
 
     const pad = overhang(list);
+    const cells = cellsOver(R, pad);
+    const t = tiling();
     // One mark, laid in every square the view reaches.
     const overTiles = (sh) => {
-      for (let j = R.j0 - pad; j <= R.j1 + pad; j++) {
-        for (let i = R.i0 - pad; i <= R.i1 + pad; i++) {
-          ctx.save();
-          tileKey = `${mod(i, state.pattern.n)},${mod(j, state.pattern.n)}`;
-          ctx.translate(i * T, j * T);
-          const r = rotAt(state.pattern, i, j);
-          if (r) {
-            ctx.translate(T / 2, T / 2);
-            ctx.rotate((r * Math.PI) / 2);
-            ctx.translate(-T / 2, -T / 2);
-          }
-          if (sh.inside) paintShape(sh.inside, hair, 'inside', i, j);
-          else paintShape(sh, hair, sh.fillColor ? 'outline' : undefined, i, j);
-          ctx.restore();
-        }
+      for (const [i, j] of cells) {
+        ctx.save();
+        tileKey = t.key(state.pattern, i, j);
+        intoTile(ctx, i, j);
+        if (sh.inside) paintShape(sh.inside, hair, 'inside', i, j);
+        else paintShape(sh, hair, sh.fillColor ? 'outline' : undefined, i, j);
+        ctx.restore();
       }
     };
 
@@ -1045,8 +1081,7 @@
   function warpedCopy(s, part, i, j, how) {
     const f = warpField();
     if (!f.active) return null;
-    const n = state.pattern.n;
-    tileKey = `${mod(i, n)},${mod(j, n)}`;
+    tileKey = tiling().key(state.pattern, i, j);
     const ends = s.layer === 'stroke' && !s.filled && part !== 'inside' && ROUNDABLE[s.kind]
       ? endpointsOf(s).filter(joined)
       : [];
@@ -1276,8 +1311,7 @@
   /* The ink one mark lays down in square `at`, as the plane paints it —
      warped or not — as areas to fill. */
   function inkOf(s, at, hair) {
-    const n = state.pattern.n;
-    tileKey = `${mod(at.i, n)},${mod(at.j, n)}`;
+    tileKey = tiling().key(state.pattern, at.i, at.j);
     if (s.layer === 'fill' || s.filled) {
       const bent = warpedCopy(s, undefined, at.i, at.j, paintWarp);
       return [{ fill: bent ? bentPath(bent) : pathOf(s), rule: s.layer === 'fill' ? 'evenodd' : 'nonzero' }];
@@ -1673,13 +1707,7 @@
     g.rotate(v.rot);
     g.scale(v.scale, v.scale);
     const f = tile || frameTile();
-    g.translate(f.i * T, f.j * T);
-    const tr = rotAt(state.pattern, f.i, f.j);
-    if (tr) {
-      g.translate(T / 2, T / 2);
-      g.rotate((tr * Math.PI) / 2);
-      g.translate(-T / 2, -T / 2);
-    }
+    intoTile(g, f.i, f.j);
     draw();
     g.restore();
   }
@@ -1709,6 +1737,7 @@
 
 
   function drawRules(R) {
+    if (!tiling().square) return drawOutlineRules(R);
     const n = state.pattern.n;
     const minor = R.step > 15;
     // A wider line only helps while the squares are big enough to carry
@@ -1747,6 +1776,46 @@
     hairSnap = 0.5;
   }
 
+  /* The rules of a tiling that is not the square: every copy's outline,
+     each edge drawn once, by the copy on one side of it. An edge between
+     two blocks is a major rule, as the square's block lines are. */
+  function drawOutlineRules(R) {
+    const t = tiling();
+    const n = state.pattern.n;
+    const minor = R.step > 15;
+    const room = R.step > 70;
+    // One copy further out, so an edge at the rim is drawn by one of them.
+    const cells = cellsOver(R, 1);
+    if (cells.length > 6000) return;
+    const inner = [], outer = [];
+    for (const [i, j] of cells) {
+      const o = t.origin(i, j);
+      const vs = t.outline.map((p) => placeIn(p, i, j));
+      const own = t.block(n, i, j);
+      for (let k = 0; k < vs.length; k++) {
+        const a = vs[k], b = vs[(k + 1) % vs.length];
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        const nb = cellOf({ x: mx + (mx - o.x) * 0.05, y: my + (my - o.y) * 0.05 });
+        // Each edge once: the copy that comes first draws it.
+        if (nb.j < j || (nb.j === j && nb.i < i)) continue;
+        (n > 1 && t.block(n, nb.i, nb.j) !== own ? outer : inner).push([a, b]);
+      }
+    }
+    const pass = (edges, width, colour) => {
+      if (!edges.length) return;
+      ctx.lineWidth = width;
+      ctx.strokeStyle = colour;
+      ctx.beginPath();
+      for (const [a, b] of edges) hairLine(a.x, a.y, b.x, b.y);
+      ctx.stroke();
+    };
+    hairSnap = 0.5;
+    if (minor) pass(inner, room ? 2 : 1, RULE_MINOR);
+    else if (n === 1) pass(inner, 1, RULE_MAJOR);
+    pass(outer, room ? 3 : 1, RULE_MAJOR);
+    ctx.lineWidth = 1;
+  }
+
   // The drafting lattice, drawn on the drawing surface only.
   /* The lattice lies over the whole plane, not just the square the
      pointer is in, and it is turned with each square: a quarter-turn
@@ -1754,11 +1823,8 @@
      what is drawn has to be what a mark placed there would line up
      with. */
   function tileFrames(R) {
-    const out = [];
-    for (let j = R.j0; j <= R.j1; j++) {
-      for (let i = R.i0; i <= R.i1; i++) out.push([i, j, rotAt(state.pattern, i, j)]);
-    }
-    return out;
+    const t = tiling();
+    return cellsOver(R, 0).map(([i, j]) => [i, j, t.angle(state.pattern, i, j)]);
   }
 
   /* An arrow in each square saying which way that square has been turned.
@@ -1783,14 +1849,23 @@
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const [i, j, rot] of frames) {
-      // The square's own top-left corner, in world; w2s carries whatever
-      // the view is doing to it.
+    const t = tiling();
+    for (const [i, j, deg] of frames) {
+      /* The tile's own top-left corner as it lies, in world — the corner
+         the eye goes to first, whichever way the copy is turned — moved in
+         towards the middle; w2s carries whatever the view is doing to it. */
       const inset = ARROW_INSET / state.view.scale;
-      const p = w2s(i * T + inset, j * T + inset);
+      const o = t.origin(i, j);
+      const c = t.outline.map((q) => placeIn(q, i, j))
+        .reduce((a, b) => (b.x + b.y < a.x + a.y - 1e-6 ? b : a));
+      const dx = o.x - c.x, dy = o.y - c.y, len = Math.hypot(dx, dy);
+      // Six triangles or three hexagons meet at a corner, so theirs sit
+      // well in, clear of the neighbours' badges at the same corner.
+      const step = t.square ? inset * Math.SQRT2 : Math.max(inset * 1.8, len * 0.38);
+      const p = w2s(c.x + (dx / len) * step, c.y + (dy / len) * step);
       ctx.save();
       ctx.translate(p.x, p.y);
-      ctx.rotate(rot * (Math.PI / 2) + state.view.rot);
+      ctx.rotate((deg * Math.PI) / 180 + state.view.rot);
       const a = ARROW_PX;
       const head = a * 0.78;
       ctx.strokeStyle = ACCENT;
@@ -1826,6 +1901,25 @@
     latticePass(state.sub, 1, SUB_RULE, frames);
   }
 
+  // A segment cut to the tile's outline, which is convex; null if none of it is on it.
+  function clipToTile(t, a, b) {
+    let t0 = 0, t1 = 1;
+    const L = t.outline, m = L.length;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    for (let k = 0; k < m; k++) {
+      const p = L[k], q = L[(k + 1) % m];
+      const ex = q.x - p.x, ey = q.y - p.y;
+      // Inside is where ex·(y - p.y) - ey·(x - p.x) >= 0.
+      const f0 = ex * (a.y - p.y) - ey * (a.x - p.x);
+      const df = ex * dy - ey * dx;
+      if (Math.abs(df) < 1e-12) { if (f0 < 0) return null; continue; }
+      const r = -f0 / df;
+      if (df > 0) t0 = Math.max(t0, r); else t1 = Math.min(t1, r);
+      if (t0 >= t1) return null;
+    }
+    return [{ x: a.x + dx * t0, y: a.y + dy * t0 }, { x: a.x + dx * t1, y: a.y + dy * t1 }];
+  }
+
   // y = m·x + c, cut to the tile square.
   function clipHair(m, c, hair) {
     const cut = (y) => (y - c) / m;
@@ -1847,15 +1941,15 @@
     ctx.lineWidth = 1;
     ctx.strokeStyle = colour;
     ctx.beginPath();
-    for (const [i, j, rot] of frames) {
-      const put = (x, y) => {
-        let dx = x - T / 2, dy = y - T / 2;
-        for (let k = rot; k > 0; k--) { const t = dx; dx = -dy; dy = t; }
-        return [dx + T / 2 + i * T, dy + T / 2 + j * T];
-      };
+    const t = tiling();
+    for (const [i, j] of frames) {
       const hair = (a, b, c, d) => {
-        const p = put(a, b), q = put(c, d);
-        hairLine(p[0], p[1], q[0], q[1]);
+        // Kept to the tile: a tile that is not the square leaves the
+        // square's corners to neighbours turned another way.
+        const cut = t.square ? [{ x: a, y: b }, { x: c, y: d }] : clipToTile(t, { x: a, y: b }, { x: c, y: d });
+        if (!cut) return;
+        const p = placeIn(cut[0], i, j), q = placeIn(cut[1], i, j);
+        hairLine(p.x, p.y, q.x, q.y);
       };
       latticeLines(n, skip, hair);
     }
@@ -1870,7 +1964,7 @@
        stack a blue line over a grey one — but with them off nothing drew
        it at all, and the lattice came out with a gap two cells wide at
        every seam and a run of even cells in between. */
-    const first = state.grid ? 1 : 0;
+    const first = state.grid && tiling().square ? 1 : 0;
 
     if (diagGrid()) {
       // Columns and rows both come off the basis, which rounds them to
@@ -2223,9 +2317,7 @@
       x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1);
     }
     if (x0 === Infinity) return [0, 0];
-    const block = state.pattern.n * T;
-    const home = (c) => -Math.round((c - T / 2) / block) * block || 0;
-    return [home((x0 + x1) / 2), home((y0 + y1) / 2)];
+    return tiling().homeShift(state.pattern.n, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 });
   }
 
   /* A mark you just moved should sit above what it was moved onto, so
@@ -2734,7 +2826,7 @@
     if (!hx && !hy) return at;
     const o = placeIn({ x: 0, y: 0 }, at.i, at.j);
     const p = placeIn({ x: hx, y: hy }, at.i, at.j);
-    return { i: at.i - Math.round((p.x - o.x) / T), j: at.j - Math.round((p.y - o.y) / T) };
+    return tiling().shifted(at, o.x - p.x, o.y - p.y);
   }
 
   function followHome(marks, hx, hy) {
@@ -3107,14 +3199,6 @@
      lying across a filled area still wins. `interior` adds a final
      pass through the middle of unfilled closed shapes, which is what
      you want when picking something up but not when rubbing it out. */
-  // World back into one square's own frame — the inverse of placeIn.
-  function unplaceIn(w, i, j) {
-    const r = rotAt(state.pattern, i, j);
-    let dx = w.x - i * T - T / 2, dy = w.y - j * T - T / 2;
-    for (let k = (4 - r) % 4; k > 0; k--) { const t = dx; dx = -dy; dy = t; }
-    return { x: dx + T / 2, y: dy + T / 2 };
-  }
-
   /* A mark may run past its own square and show on its neighbours — so
      the ink under the cursor can belong to a neighbour's copy of it, at
      coordinates this square knows nothing about. That
@@ -3162,14 +3246,8 @@
       const pad = Math.min(overhang(state.shapes), 2);
       if (pad) {
         const world = placeIn(p, home.i, home.j);
-        for (let ring = 1; ring <= pad; ring++) {
-          for (let dj = -ring; dj <= ring; dj++) {
-            for (let di = -ring; di <= ring; di++) {
-              if (Math.max(Math.abs(di), Math.abs(dj)) !== ring) continue;
-              const i = home.i + di, j = home.j + dj;
-              spots.push({ q: unplaceIn(world, i, j), i, j });
-            }
-          }
+        for (const { i, j } of around(home.i, home.j, pad).slice(1)) {
+          spots.push({ q: unplaceIn(world, i, j), i, j });
         }
       }
     }
@@ -3240,6 +3318,80 @@
   const fillCanvas = document.createElement('canvas');
   fillCanvas.width = fillCanvas.height = FILL_RES;
   const fctx = fillCanvas.getContext('2d', { willReadFrequently: true });
+
+  /* The cells of the scratch grid that are the tile's own, grown by a
+     couple of cells, for a tile that is not the square. The same every
+     time for the same grid, so kept. */
+  let domainFor = { sig: '', dom: null };
+  function tileDomain(t, R, k, ox, oy) {
+    const sig = `${t.id}:${R}:${k}:${ox}:${oy}`;
+    if (domainFor.sig === sig) return domainFor.dom;
+    const dom = new Uint8Array(R * R);
+    const g = 2.5 / k;
+    for (let y = 0; y < R; y++) {
+      for (let x = 0; x < R; x++) {
+        if (t.inside({ x: (x + 0.5) / k + ox, y: (y + 0.5) / k + oy }, g)) dom[y * R + x] = 1;
+      }
+    }
+    domainFor = { sig, dom };
+    return dom;
+  }
+
+  /* The flooded area on the tile's own cells: does it reach the rim of
+     them anywhere, and does it reach every edge of the tile? The second
+     is what says it is the ground the marks sit on. */
+  function domainHit(t, m, dom, R, k, ox, oy) {
+    let any = false;
+    for (let y = 0; y < R && !any; y++) {
+      for (let x = 0; x < R; x++) {
+        const i = y * R + x;
+        if (!m[i]) continue;
+        if (x === 0 || y === 0 || x === R - 1 || y === R - 1
+          || !dom[i - 1] || !dom[i + 1] || !dom[i - R] || !dom[i + R]) { any = true; break; }
+      }
+    }
+    const L = t.outline;
+    const c = t.c0;
+    const all = L.every((a, e) => {
+      const b = L[(e + 1) % L.length];
+      for (let s = 1; s < 24; s++) {
+        const f = s / 24;
+        let x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f;
+        // A few cells in from the edge, towards the middle.
+        const dx = c.x - x, dy = c.y - y, len = Math.hypot(dx, dy);
+        x += (dx / len) * (3 / k); y += (dy / len) * (3 / k);
+        const gx = Math.floor((x - ox) * k), gy = Math.floor((y - oy) * k);
+        if (gx >= 0 && gy >= 0 && gx < R && gy < R && m[gy * R + gx]) return true;
+      }
+      return false;
+    });
+    return { any, all };
+  }
+
+  /* A ring cut to a convex outline (Sutherland–Hodgman). A ring that
+     was a hole stays one: the part of it inside the outline keeps the
+     way it runs. */
+  function clipLoop(loop, outline) {
+    let out = loop;
+    const m = outline.length;
+    for (let e = 0; e < m && out.length; e++) {
+      const p = outline[e], q = outline[(e + 1) % m];
+      const ex = q.x - p.x, ey = q.y - p.y;
+      const side = (v) => ex * (v.y - p.y) - ey * (v.x - p.x);
+      const next = [];
+      for (let i = 0; i < out.length; i++) {
+        const a = out[i], b = out[(i + 1) % out.length];
+        const sa = side(a), sb = side(b);
+        if (sa >= 0) next.push(a);
+        if ((sa >= 0) !== (sb >= 0)) {
+          const f = sa / (sa - sb);
+          next.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+        }
+      }
+      out = next;
+    }
+    return out;
+  }
 
   // Which edges of its grid does the flooded area run up to?
   function edgesHit(m, R) {
@@ -3331,8 +3483,11 @@
     if (onEdge) return recolour(onEdge);
 
     const home = drawTile || activeTile;
-    const r0 = rotAt(state.pattern, home.i, home.j);
+    const t = tiling();
     const pad = Math.min(overhang(state.shapes), 2);
+    // Back out of the home copy's placement: the plane into its own frame.
+    const [ha, hb, hc, hd, he, hf] = t.matrix(state.pattern, home.i, home.j);
+    const back = [ha, hc, hb, hd, -(ha * he + hb * hf), -(hc * he + hd * hf)];
 
     /* Which squares lay ink on the grid. It has to reach `pad` squares
        past the grid's own edge, not past the home square's: when the
@@ -3340,16 +3495,7 @@
        ring still run ink into it, and leaving them out left the barrier
        full of holes exactly where the flood was about to be judged on
        whether it had escaped. */
-    const placesFor = (rings) => {
-      const out = [];
-      const far = rings + pad;
-      for (let dj = -far; dj <= far; dj++) {
-        for (let di = -far; di <= far; di++) {
-          out.push([di, dj, rotAt(state.pattern, home.i + di, home.j + dj)]);
-        }
-      }
-      return out;
-    };
+    const placesFor = (rings) => around(home.i, home.j, rings + pad);
     findCrossJunctions();
 
     /* The flood runs on a grid laid over the square. An area held in
@@ -3364,7 +3510,7 @@
     let cropped = false;           // gave up looking for a closed boundary
     const maxRings = pad ? 1 : 0;  // the square and the ring around it
     let ox = 0, oy = 0, span = T, R = FILL_RES, k = R / T;
-    let px, barrier, walls, mask, traced, grow, raw, edges, isGround, seeds;
+    let px, barrier, walls, mask, traced, grow, raw, edges, isGround, seeds, dom;
 
     for (;;) {
       const places = placesFor(rings);
@@ -3389,14 +3535,11 @@
          Each mark is laid down in a colour that encodes its index, so
          one read gives both the barriers and which mark made each. */
       let thinnest = Infinity;   // the narrowest wall, in cells
-      for (const [di, dj, r] of places) {
-        tileKey = `${mod(home.i + di, state.pattern.n)},${mod(home.j + dj, state.pattern.n)}`;
+      for (const c of places) {
+        tileKey = t.key(state.pattern, c.i, c.j);
         fctx.setTransform(k, 0, 0, k, -ox * k, -oy * k);
-        fctx.translate(T / 2, T / 2);
-        fctx.rotate((-r0 * Math.PI) / 2);
-        fctx.translate(di * T, dj * T);
-        fctx.rotate((r * Math.PI) / 2);
-        fctx.translate(-T / 2, -T / 2);
+        fctx.transform(back[0], back[1], back[2], back[3], back[4], back[5]);
+        intoTile(fctx, c.i, c.j);
         state.shapes.forEach((sh, idx) => {
           if (sh.layer !== 'stroke') return;
           const id = idx + 1;
@@ -3430,6 +3573,14 @@
       // short of its point.
       for (let i = 0, n = R * R; i < n; i++) barrier[i] = px[i * 4 + 3] >= 128 ? 1 : 0;
 
+      /* A tile that is not the square shares the square's grid with the
+         corners of its neighbours. On the tile's own grid the flood is
+         kept to the tile — grown a couple of cells past its edge, so an
+         area running over the seam is seen to — and whatever it leaves
+         there is cut back to the edge exactly once it is traced. */
+      dom = !rings && !t.square ? tileDomain(t, R, k, ox, oy) : null;
+      if (dom) for (let i = 0, n = R * R; i < n; i++) if (!dom[i]) barrier[i] = 1;
+
       const seed = {
         x: clamp(Math.round((w.x - ox) * k), 0, R - 1),
         y: clamp(Math.round((w.y - oy) * k), 0, R - 1),
@@ -3452,7 +3603,7 @@
          the ground it was kept, so a fill clicked in the corner of the
          square came back two and a half squares across and its copies
          tiled over everything around them. */
-      edges = edgesHit(raw, R);
+      edges = dom ? domainHit(t, raw, dom, R, k, ox, oy) : edgesHit(raw, R);
       isGround = !rings && edges.all;
       if (!cropped && edges.any && !isGround) {
         if (rings < maxRings) { rings++; continue; }
@@ -3479,14 +3630,28 @@
             if (!raw[gy * R + gx]) return;
             const q = { x: (gx + 0.5 + dx) * step, y: (gy + 0.5 + dy) * step };
             const world = placeIn(q, home.i, home.j);
-            const b = unplaceIn(world, Math.floor(world.x / T), Math.floor(world.y / T));
+            const there = cellOf(world);
+            const b = unplaceIn(world, there.i, there.j);
             const bx = clamp(Math.round(b.x * k), 0, R - 1);
             const by = clamp(Math.round(b.y * k), 0, R - 1);
             if (!raw[by * R + bx] && !barrier[by * R + bx]) found.push({ x: bx, y: by });
           };
-          for (let a = 0; a < R; a++) {
-            over(R - 1, a, 1, 0); over(0, a, -1, 0);
-            over(a, R - 1, 0, 1); over(a, 0, 0, -1);
+          if (!dom) {
+            for (let a = 0; a < R; a++) {
+              over(R - 1, a, 1, 0); over(0, a, -1, 0);
+              over(a, R - 1, 0, 1); over(a, 0, 0, -1);
+            }
+          } else {
+            // The rim of the tile's own cells, wherever it runs.
+            for (let gy = 0; gy < R; gy++) {
+              for (let gx = 0; gx < R; gx++) {
+                if (!raw[gy * R + gx]) continue;
+                for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                  const nx = gx + dx, ny = gy + dy;
+                  if (nx < 0 || ny < 0 || nx >= R || ny >= R || !dom[ny * R + nx]) over(gx, gy, dx, dy);
+                }
+              }
+            }
           }
           let grew = false;
           for (const s of found) {
@@ -3561,7 +3726,9 @@
        gone past and left the point where it lay: the fill sat seven
        units inside a stroke nine and a half wide, and the stroke looked
        thin along everything that had been filled against it. */
-    const loops = snapLoopsToWalls(traced, walls, (2 * grow + 2) / k, 0.6);
+    let loops = snapLoopsToWalls(traced, walls, (2 * grow + 2) / k, 0.6);
+    // Kept to the tile, where the flood was: see `dom` above.
+    if (dom) loops = loops.map((l) => clipLoop(l, t.outline)).filter((l) => l.length >= 3);
 
     /* Everything traced came off a grid laid over this one tile, so a
        loop that lies wholly outside it is not part of the area that was
@@ -4311,7 +4478,7 @@
     if (e.key === 'Shift') { shiftHeld = true; noteHover(lastWorld); requestDraw(); return; }
     if (e.key === 'Alt') { altHeld = true; return; }
     if (e.key === 'Control') { ctrlHeld = true; return; }
-    if (e.key === 'Escape' && closeNewPrompt()) { e.preventDefault(); return; }
+    if (e.key === 'Escape' && (closeNewPrompt() || closeShapePrompt())) { e.preventDefault(); return; }
     // Space picks a tool now, so stop the browser scrolling the page or
     // re-clicking whichever button still holds focus.
     if (e.key === ' ') e.preventDefault();
@@ -5790,7 +5957,8 @@
   function dropAnchor(s) {
     const w = toWorld(s.x, s.y);
     const tiled = state.warp.repeat === 'tile';
-    const i = tiled ? Math.floor(w.x / T) : null, j = tiled ? Math.floor(w.y / T) : null;
+    const c = tiled ? cellOf(w) : { i: null, j: null };
+    const { i, j } = c;
     const at = tiled ? unplaceIn(w, i, j) : w;
     const anchors = state.warp.anchors.concat([
       { x: at.x, y: at.y, r: tiled ? 250 : 400, bulge: 0.5, twirl: 0 },
@@ -5861,7 +6029,7 @@
     const tiled = b.dataset.repeat === 'tile';
     const anchors = tiled
       ? state.warp.anchors.map((a) => ({
-        ...a, ...unplaceIn(a, Math.floor(a.x / T), Math.floor(a.y / T)), r: Math.min(a.r, T),
+        ...a, ...unplaceIn(a, cellOf(a).i, cellOf(a).j), r: Math.min(a.r, T),
       }))
       : state.warp.anchors;
     setWarp({ ...state.warp, repeat: b.dataset.repeat, anchors });
@@ -5879,52 +6047,140 @@
   /* symmetry ------------------------------------------------------ */
 
   // An arrow is the clearest possible read on which way a tile faces.
-  const CELL_GLYPH = '<text x="12" y="12" text-anchor="middle" dominant-baseline="central">\u2B06\uFE0F</text>';
+  const CELL_ARROW = '<text x="12" y="12" text-anchor="middle" dominant-baseline="central">\u2B06\uFE0F</text>';
+
+  // The tile's own outline, drawn round the arrow and turned with it.
+  function cellGlyph(t) {
+    if (t.square) return CELL_ARROW;
+    const k = 22 / T;
+    const pts = t.outline.map((p) => `${(12 + (p.x - t.c0.x) * k).toFixed(2)},${(12 + (p.y - t.c0.y) * k).toFixed(2)}`);
+    return `<polygon class="outline" points="${pts.join(' ')}"/>`
+      + `<g transform="translate(12 12) scale(0.6) translate(-12 -12)">${CELL_ARROW}</g>`;
+  }
+
+  /* The shape of the tile. Every mark on the table was drawn to the one
+     there is, so another shape is another drawing: choosing one starts a
+     new one, and asks first, in the panel, whether to save what is there
+     when it is not already safely in a file. */
+  const shapeWrap = document.getElementById('shapes');
+  const shapePrompt = document.getElementById('shapeConfirm');
+  let shapeAsked = null;
+
+  SHAPE_IDS.forEach((id) => {
+    const b = document.createElement('button');
+    b.dataset.shape = id;
+    b.textContent = TILINGS[id].name;
+    b.title = `Draw on a ${TILINGS[id].name.toLowerCase()} tile — starts a new drawing`;
+    b.addEventListener('click', () => chooseShape(id));
+    shapeWrap.appendChild(b);
+  });
+
+  function closeShapePrompt() {
+    if (shapePrompt.hidden) return false;
+    shapePrompt.hidden = true;
+    shapeAsked = null;
+    syncSymmetry();
+    return true;
+  }
+
+  function chooseShape(id) {
+    closeShapePrompt();
+    if (id === shapeOf(state.pattern)) return;
+    cancelDraft();
+    select([]);
+    requestDraw();
+    const unsaved = state.shapes.length && (dirty || !fileNameEl.textContent);
+    if (!unsaved) return startNew(false, id);
+    shapeAsked = id;
+    shapePrompt.hidden = false;
+    for (const b of shapeWrap.children) b.classList.toggle('on', b.dataset.shape === id);
+    document.getElementById('shapeName').textContent = TILINGS[id].name.toLowerCase();
+    document.getElementById('shapeYes').focus();
+  }
+
+  document.getElementById('shapeYes').addEventListener('click', async () => {
+    const id = shapeAsked;
+    // Only start over once the drawing is safely down.
+    if (id && await saveProject(false)) startNew(false, id);
+  });
+  document.getElementById('shapeNo').addEventListener('click', () => {
+    if (shapeAsked) startNew(false, shapeAsked);
+  });
+  document.getElementById('shapeCancel').addEventListener('click', closeShapePrompt);
+
+  // What a fresh drawing on each shape starts with.
+  const FIRST_PATTERN = { hex: 'trio', tri: 'rosette' };
+  function firstPattern(shape) {
+    if (shape === 'square') return { ...DEFAULTS.pattern, cells: DEFAULTS.pattern.cells.slice() };
+    const list = presetsFor(shape);
+    return patternFromPreset(list.find((p) => p.id === FIRST_PATTERN[shape]) || list[0], shape);
+  }
 
   const presetWrap = document.getElementById('presets');
-  PRESETS.forEach((p) => {
-    const b = document.createElement('button');
-    b.className = 'chip';
-    b.dataset.preset = p.id;
-    b.textContent = p.name;
-    b.addEventListener('click', () => setPattern({ n: p.n, cells: cellsFromPreset(p) }));
-    presetWrap.appendChild(b);
-  });
-
   const sizeWrap = document.getElementById('sizes');
-  [1, 2, 3, 4].forEach((n) => {
-    const b = document.createElement('button');
-    b.dataset.size = n;
-    b.textContent = n;
-    b.title = `${n} × ${n} block`;
-    b.addEventListener('click', () => {
-      if (state.pattern.n === n) return;
-      /* A smaller block drops the squares outside it. The step behind
-         holds the old one whole, so the turns come back with undo. */
-      setPattern({ n, cells: resizeCells(state.pattern.cells, state.pattern.n, n) });
-    });
-    sizeWrap.appendChild(b);
-  });
-
   const gridWrap = document.getElementById('patternGrid');
+  const turnNote = document.getElementById('turnNote');
+  const TURN_WORD = { square: 'a quarter', hex: 'a sixth', tri: 'a third' };
+
+  /* The presets and the block sizes belong to the shape, so both are
+     laid out again when it changes. A triangle's block holds whole pairs
+     of up and down, so it is twice as wide as it is deep, and stops at
+     three deep before it outgrows the rail. */
+  function buildShapeControls() {
+    const shape = shapeOf(state.pattern);
+    presetWrap.innerHTML = '';
+    presetsFor(shape).forEach((p) => {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.dataset.preset = p.id;
+      b.textContent = p.name;
+      b.addEventListener('click', () => setPattern(patternFromPreset(p, shape)));
+      presetWrap.appendChild(b);
+    });
+    sizeWrap.innerHTML = '';
+    const t = tiling();
+    (shape === 'tri' ? [1, 2, 3] : [1, 2, 3, 4]).forEach((n) => {
+      const b = document.createElement('button');
+      b.dataset.size = n;
+      b.textContent = n;
+      b.title = `${t.per(n)} × ${n} block`;
+      b.addEventListener('click', () => {
+        if (state.pattern.n === n) return;
+        /* A smaller block drops the tiles outside it. The step behind
+           holds the old one whole, so the turns come back with undo. */
+        setPattern({ shape, n, cells: resizeCells(state.pattern, n) });
+      });
+      sizeWrap.appendChild(b);
+    });
+    turnNote.textContent = shape === 'tri'
+      ? 'Click a tile to turn it a third. A down triangle is an up one turned, so its arrow leans. The upright arrow is your drawing surface.'
+      : `Click a tile to turn it ${TURN_WORD[shape]}. The upright arrow is your drawing surface.`;
+    buildPatternGrid();
+  }
 
   function buildPatternGrid() {
-    const n = state.pattern.n;
-    gridWrap.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+    const t = tiling();
+    const n = state.pattern.n, per = t.per(n);
+    gridWrap.style.gridTemplateColumns = `repeat(${per}, 1fr)`;
+    gridWrap.style.maxWidth = per > 4 ? `${Math.round(per * 26 + 20)}px` : '';
+    gridWrap.dataset.shape = t.id;
     gridWrap.innerHTML = '';
+    const glyph = cellGlyph(t);
     for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        const idx = j * n + i;
+      for (let i = 0; i < per; i++) {
+        const idx = j * per + i;
         const b = document.createElement('button');
         b.className = 'cell' + (idx === 0 ? ' src' : '');
         b.dataset.idx = idx;
+        b.dataset.i = i;
+        b.dataset.j = j;
         b.title = idx === 0 ? 'The drawing surface — always upright' : `Tile ${i},${j}`;
-        b.innerHTML = `<svg viewBox="0 0 24 24">${CELL_GLYPH}</svg>`;
+        b.innerHTML = `<svg viewBox="0 0 24 24">${glyph}</svg>`;
         if (idx > 0) {
           b.addEventListener('click', () => {
             const cells = state.pattern.cells.slice();
-            cells[idx] = (cells[idx] + 1) % 4;
-            setPattern({ n: state.pattern.n, cells });
+            cells[idx] = (cells[idx] + 1) % t.turns;
+            setPattern({ ...state.pattern, cells });
           });
         }
         gridWrap.appendChild(b);
@@ -5934,23 +6190,28 @@
   }
 
   function syncSymmetry() {
-    const { n, cells } = state.pattern;
+    const { n } = state.pattern;
+    const t = tiling();
     for (const b of gridWrap.children) {
-      const rot = cells[+b.dataset.idx] || 0;
-      b.querySelector('svg').style.transform = `rotate(${rot * 90}deg)`;
+      const deg = t.angle(state.pattern, +b.dataset.i, +b.dataset.j);
+      b.querySelector('svg').style.transform = `rotate(${deg}deg)`;
     }
     const id = matchPreset(state.pattern);
     for (const b of presetWrap.children) b.classList.toggle('on', b.dataset.preset === id);
     for (const b of sizeWrap.children) b.classList.toggle('on', +b.dataset.size === n);
+    if (!shapeAsked) for (const b of shapeWrap.children) b.classList.toggle('on', b.dataset.shape === t.id);
   }
 
   /* Put a block in force and show it. The squares are only rebuilt when
      the size changes; turning one keeps the buttons, and with them
      whatever the keyboard was on. Undo comes back through here too. */
   function usePattern(next) {
+    const reshaped = shapeOf(next) !== shapeOf(state.pattern);
     const sized = next.n !== state.pattern.n;
     state.pattern = next;
-    if (sized) buildPatternGrid(); else syncSymmetry();
+    if (reshaped) buildShapeControls();
+    else if (sized) buildPatternGrid();
+    else syncSymmetry();
   }
 
   /* Changing the symmetry is an edit of the drawing like any other: it
@@ -5987,10 +6248,13 @@
      mixed strip belong to the table rather than to any one picture, so
      they stay put. The view is put back too, since a clean tile at the
      zoom and corner of the last one is not a clean start. */
-  function startNew(quiet) {
+  function startNew(quiet, shape) {
     closeNewPrompt();
-    state.pattern = { n: DEFAULTS.pattern.n, cells: DEFAULTS.pattern.cells.slice() };
-    buildPatternGrid();
+    closeShapePrompt();
+    // A new drawing keeps the shape of tile in use, unless it was asked
+    // for because of another.
+    state.pattern = firstPattern(shape || shapeOf(state.pattern));
+    buildShapeControls();
     state.grid = DEFAULTS.grid;
     state.arrows = DEFAULTS.arrows;
     state.snap = DEFAULTS.snap;
@@ -6007,6 +6271,7 @@
     setColor(DEFAULTS.color, false, true);
     setSub(DEFAULTS.sub);
     state.view = { ...DEFAULTS.view };
+    if (cw) resetView();
     state.warp = DEFAULTS.warp;
     warpSel = -1;
     syncWarpPanel();
@@ -6014,7 +6279,10 @@
     adoptShapes([]);
     setFile(null, '');
     setDirty(false);
-    if (!quiet) flash('New drawing — a clean tile and no history');
+    if (!quiet) {
+      flash(shape ? `New drawing on a ${TILINGS[shape].name.toLowerCase()} tile — a clean tile and no history`
+        : 'New drawing — a clean tile and no history');
+    }
   }
 
   newBtn.addEventListener('click', () => {
@@ -6202,11 +6470,14 @@
     const marks = d.shapes.filter((sh) => sh && sh.kind);
     if (!marks.length) return flash('No marks in that file');
 
-    const p = d.pattern;
-    if (p && p.n >= 1 && p.n <= 4 && Array.isArray(p.cells) && p.cells.length === p.n * p.n) {
-      state.pattern = p;
-      buildPatternGrid();
-    }
+    /* A file from before there were shapes has none, and is squares. Its
+       marks were drawn to that shape, so the shape comes with them even
+       when the turns do not hold together. */
+    const p = validPattern(d.pattern);
+    const shape = d.pattern && TILINGS[d.pattern.shape] ? d.pattern.shape : 'square';
+    state.pattern = p || (shape !== shapeOf(state.pattern) ? firstPattern(shape) : state.pattern);
+    closeShapePrompt();
+    buildShapeControls();
     /* A drawing carries the bench it was made at as well as the marks:
        the grid it was drawn to, the ink in hand, and the colours mixed
        for it — which are no use to it sitting in another table's
@@ -6360,8 +6631,10 @@
 
   function buildSvg() {
     junctions = findJunctions(state.shapes);
-    const { i0, i1, j0, j1 } = tileRange();
+    const R = tileRange();
+    const { i0, i1, j0, j1 } = R;
     const n = state.pattern.n;
+    const t = tiling();
     // Whole blocks, at least a couple of repeats, so the saved sheet
     // reads as a pattern however far you happen to be zoomed in.
     const span = (a, b) => {
@@ -6370,9 +6643,29 @@
       const count = Math.min(20, Math.max(least, Math.ceil((b - start + 1) / n) * n));
       return [start, start + count - 1];
     };
-    const [ia, ib] = span(i0, i1);
-    const [ja, jb] = span(j0, j1);
-    const w = (ib - ia + 1) * T, h = (jb - ja + 1) * T;
+    /* The square's sheet is whole squares. The others' lattices lie
+       aslant, so their sheet is the view — at least a couple of blocks
+       of it, and no more than twenty tiles — with the tiles at its rim
+       cut by its edge. */
+    let sheet, cells;
+    if (t.square) {
+      const [ia, ib] = span(i0, i1);
+      const [ja, jb] = span(j0, j1);
+      sheet = { x: ia * T, y: ja * T, w: (ib - ia + 1) * T, h: (jb - ja + 1) * T };
+      cells = [];
+      for (let j = ja; j <= jb; j++) for (let i = ia; i <= ib; i++) cells.push([i, j]);
+    } else {
+      const least = Math.max(4, n * 2) * T;
+      const fit = (a, b) => {
+        const c = (a + b) / 2, half = clamp(b - a, least, 20 * T) / 2;
+        return [c - half, c + half];
+      };
+      const [x0, x1] = fit(R.wx0, R.wx1);
+      const [y0, y1] = fit(R.wy0, R.wy1);
+      sheet = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      cells = cellsOver({ wx0: x0, wy0: y0, wx1: x1, wy1: y1 }, overhang(state.shapes));
+    }
+    const w = sheet.w, h = sheet.h;
 
     /* A gradient goes into the file as a def the marks point at. The
        coordinates are the tile's own, so one def serves every copy the
@@ -6465,7 +6758,7 @@
     const cellDef = new Map();
     if (warp.active && warp.tiled) {
       for (let cj = 0; cj < n; cj++) {
-        for (let ci = 0; ci < n; ci++) {
+        for (let ci = 0; ci < t.per(n); ci++) {
           const b = marksFor({ i: ci, j: cj });
           if (!b.bent) continue;
           cellDef.set(`${ci},${cj}`, `tile-${ci}-${cj}`);
@@ -6475,25 +6768,29 @@
     }
 
     const uses = [];
-    for (let j = ja; j <= jb; j++) {
-      for (let i = ia; i <= ib; i++) {
+    const num = (v) => +v.toFixed(4);
+    for (const [i, j] of cells) {
+      let tf;
+      if (t.square) {
         const r = rotAt(state.pattern, i, j);
-        const t = `translate(${i * T} ${j * T})` + (r ? ` rotate(${r * 90} ${T / 2} ${T / 2})` : '');
-        if (warp.active && !warp.tiled) {
-          const b = marksFor({ i, j });
-          if (b.bent) {
-            uses.push(`<g transform="${t}">\n    ${b.text}\n  </g>`);
-            continue;
-          }
-        }
-        const id = (warp.active && warp.tiled && cellDef.get(`${mod(i, n)},${mod(j, n)}`)) || 'tile';
-        uses.push(`<use href="#${id}" xlink:href="#${id}" transform="${t}"/>`);
+        tf = `translate(${i * T} ${j * T})` + (r ? ` rotate(${r * 90} ${T / 2} ${T / 2})` : '');
+      } else {
+        tf = `matrix(${t.matrix(state.pattern, i, j).map(num).join(' ')})`;
       }
+      if (warp.active && !warp.tiled) {
+        const b = marksFor({ i, j });
+        if (b.bent) {
+          uses.push(`<g transform="${tf}">\n    ${b.text}\n  </g>`);
+          continue;
+        }
+      }
+      const id = (warp.active && warp.tiled && cellDef.get(t.key(state.pattern, i, j))) || 'tile';
+      uses.push(`<use href="#${id}" xlink:href="#${id}" transform="${tf}"/>`);
     }
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-     width="${w / 2}" height="${h / 2}" viewBox="${ia * T} ${ja * T} ${w} ${h}">
+     width="${num(w / 2)}" height="${num(h / 2)}" viewBox="${num(sheet.x)} ${num(sheet.y)} ${num(w)} ${num(h)}">
   <defs>
     ${defs.join('\n    ')}
     <g id="tile">
@@ -6538,8 +6835,8 @@
     if (!d) return;
     if (Array.isArray(d.shapes)) state.shapes = d.shapes.filter((s) => s && s.kind);
     adoptIds(state.shapes);
-    if (d.pattern && d.pattern.n >= 1 && d.pattern.n <= 4 && Array.isArray(d.pattern.cells)
-        && d.pattern.cells.length === d.pattern.n * d.pattern.n) state.pattern = d.pattern;
+    const p = validPattern(d.pattern);
+    if (p) state.pattern = p;
     if (Array.isArray(d.palettes)) {
       state.palettes = d.palettes
         .filter((p) => p && typeof p.name === 'string' && Array.isArray(p.colors))
@@ -6576,7 +6873,7 @@
   /* ---------------- boot ---------------- */
 
   restore();
-  buildPatternGrid();
+  buildShapeControls();
   setDiag(state.diag, true);
   setSub(state.sub);
   setTool(state.tool);

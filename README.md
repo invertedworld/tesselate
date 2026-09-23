@@ -1,8 +1,9 @@
 # Tesselate
 
-A drawing table for tessellated patterns. You draw on one square tile; the plane
-around it repeats that tile forever, each copy given a quarter-turn by a symmetry
-pattern you control. Every mark appears in every tile as you make it.
+A drawing table for tessellated patterns. You draw on one tile — a square, a
+hexagon or a triangle; the plane around it repeats that tile forever, each copy
+given a turn by a symmetry pattern you control. Every mark appears in every
+tile as you make it.
 
 Everything is vector: the drawing is a list of paths, curves, circles and filled
 regions in tile coordinates, redrawn from those primitives at whatever zoom you
@@ -438,7 +439,7 @@ It is meant to be read. One mark per line, so a drawing diffs like source:
      "version": 1,
      "saved": "2026-09-11T07:01:13.385Z",
      "tile": 1000,
-     "pattern": {"n":2,"cells":[0,1,3,2]},
+     "pattern": {"shape":"square","n":2,"cells":[0,1,3,2]},
      "plane": {"grid":true,"snap":false,"sub":8,"subLast":8,"diag":"off",
                "warp":{"amount":1,"repeat":"plane","ink":"swell","anchors":[{"x":500,"y":500,"r":400,"bulge":0.5,"twirl":0}]}},
      "ink": {"color":"#cf4326","across":"shape","width":9,"filled":false},
@@ -450,7 +451,9 @@ It is meant to be read. One mark per line, so a drawing diffs like source:
     }
 
 Coordinates are in tile units — the tile is `tile` across, 1000 — so a drawing
-is resolution-free and stays exact at any zoom. A mark in a group carries
+is resolution-free and stays exact at any zoom. `pattern.shape` is the tile the
+marks were drawn to, `square`, `hex` or `tri`; a file saved before there were
+shapes has none and opens as squares. A mark in a group carries
 `group`, the outermost group it is in; one inside a group within a group also
 carries `groups`, the whole chain, outermost first. A stroke or fill in a
 gradient that lies across the tile says so with `"across":"tile"` beside its
@@ -473,8 +476,8 @@ as a download gets to writing back over something. *Load* opens the ordinary
 file chooser. The file in play is named under the buttons, with a
 vermilion dot while the drawing has moved on since it was written.
 
-**New** puts the table back to how it starts: an empty tile, the default
-symmetry block, the default grid, ink and view. Anything a drawing carries is a
+**New** puts the table back to how it starts: an empty tile of the shape in
+use, that shape's first symmetry block, the default grid, ink and view. Anything a drawing carries is a
 setting *of* that drawing and goes with it — but your palettes and the recently
 mixed strip belong to the table rather than to any one picture, and stay put.
 
@@ -658,22 +661,61 @@ and working — it just falls back to the marks themselves.
 
 ## Symmetry
 
-Rotation is defined by an *n × n* block of quarter-turns tiled across the plane.
-Pick a preset, choose a block size of 1–4, then click any cell to turn it a
-quarter at a time. The cell with the upright arrow is your drawing surface and stays upright, so
-presets are stored relative to it.
+**Tile** picks the shape drawn on:
+
+- **Square** — the plain grid; each copy turns by quarters.
+- **Hex** — flat-topped hexagons, three meeting at every corner; each copy
+  turns by sixths.
+- **Triangle** — equilateral triangles, six meeting at every corner, pointing
+  up and down by turns. A down triangle is the up one turned a sixth about its
+  own middle, so each copy turns by thirds on top of what its place asks for.
+
+Every tile fits the same 1000-unit square and turns about its own middle, so
+the tools, the lattice and the file are the same whatever the shape. The marks
+are drawn to the tile they were drawn on, though, and mean nothing on another:
+**choosing another shape starts a new drawing**. If what is on the table is
+not safely in a file — never saved, or changed since — the panel asks first
+whether to save it, the way **New** does: *Yes* saves and then starts over,
+*No* starts over anyway, *Cancel* or `Esc` goes back. An empty table just
+changes.
+
+Rotation is defined by a block of turns tiled across the plane: *n × n* for the
+square and the hexagon, and *2n × n* for the triangle, so the block holds
+whole up-and-down pairs. Pick a preset, choose a block size — 1–4, or 1–3 for
+the triangle — then click any cell to turn it one step. The cell with the
+upright arrow is your drawing surface and stays upright, so presets are stored
+relative to it.
+
+Square:
 
 - **Translate** — no rotation, plain repetition
 - **Pinwheel** — the 2×2 four-fold rotation
 - **Rows** / **Columns** / **Checker** — half-turns in one direction or alternating
 - **Triple**, **Cascade**, **Windmill**, **Spin** — diagonal and 4×4 rotations
 
+Hex:
+
+- **Translate** — no rotation
+- **Rows** / **Columns** — half-turns along one direction of the lattice
+- **Trio** — the three hexagons round one corner in three are spun about it,
+  so every hexagon belongs to one three-fold figure
+- **Cascade**, **Spin** — thirds and sixths stepping across the block
+
+Triangle:
+
+- **Alternate** — every up triangle alike, every down one the same turned a sixth
+- **Half-turn** — the down triangles turned a half instead, so each pair is a
+  rhombus with a centre of symmetry
+- **Rosette** — the six triangles round one corner in three are spun about
+  it, so the plane is covered in six-fold rosettes
+- **Rows**, **Cascade** — thirds stepping down and across the block
+
 Changing the block is an edit of the drawing like any other. A preset, a new
 size and a turned square each go on the undo stack, so a smaller block is not
 the one-way door it looks: it drops the squares outside it, and `⌘Z` brings
 them back with their turns.
 
-**Show orientation** puts a small arrow in each square on the plane, pointing
+**Show orientation** puts a small arrow in each tile on the plane, pointing
 the way that square has been turned. A drawing under a block of quarter-turns
 reads as one figure, and it is easy to lose track of which square is which; the
 block above says it for the pattern, this says it on the work itself.
@@ -685,7 +727,8 @@ inside it does the turning. It is vermilion and heavy, because it is an answer
 to a question you are asking rather than part of the work — and it goes when
 the squares are too small to hold it, on the same reasoning as the lattice:
 too small to read is worse than absent, because it becomes noise along the
-rules.
+rules. On the hexagon and the triangle it sits further in from that corner,
+clear of the other tiles' arrows at the same corner.
 
 ## Plane
 
@@ -790,7 +833,8 @@ rather than tinted, so a colour on screen is the colour it is.
     styles.css        all styling
     src/geometry.js   path building, SVG path data, simplification,
                       flood fill to vector contour tracing
-    src/patterns.js   symmetry presets and the rotation lookup
+    src/patterns.js   the tilings — where each copy of the tile sits and how
+                      it is turned — and their symmetry presets
     src/warp.js       the warp: anchors as a flow, and marks laid through it
     src/app.js        state, renderer, input, UI, export
 

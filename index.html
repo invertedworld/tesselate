@@ -361,14 +361,26 @@
 
   <section class="panel" id="symmetryPanel">
     <div class="label"><span>Symmetry</span><i></i></div>
+    <div class="row shape-row">
+      <span class="mono tiny">Tile</span>
+      <div class="modes" id="shapes"></div>
+    </div>
+    <div class="confirm" id="shapeConfirm" hidden>
+      <p>A <span id="shapeName">new</span> tile starts a new drawing. Do you want to save your changes?</p>
+      <div class="grid3">
+        <button class="wide fatal" id="shapeYes">Yes</button>
+        <button class="wide" id="shapeNo">No</button>
+        <button class="wide" id="shapeCancel">Cancel</button>
+      </div>
+    </div>
     <div class="chips" id="presets"></div>
     <div class="row block-row">
       <span class="mono tiny">Block</span>
       <div class="sizes" id="sizes"></div>
     </div>
     <div class="pattern-grid" id="patternGrid"></div>
-    <p class="note">Click a tile to turn it a quarter. The upright arrow is your drawing surface.</p>
-    <button class="wide toggle" data-toggle="arrows" title="Mark each square on the plane with the way it has been turned"><span class="tick"></span><span>Show orientation</span></button>
+    <p class="note" id="turnNote">Click a tile to turn it a quarter. The upright arrow is your drawing surface.</p>
+    <button class="wide toggle" data-toggle="arrows" title="Mark each tile on the plane with the way it has been turned"><span class="tick"></span><span>Show orientation</span></button>
   </section>
 
 </aside>
