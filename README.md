@@ -5,9 +5,10 @@ hexagon or a triangle; the plane around it repeats that tile forever, each copy
 given a turn by a symmetry pattern you control. Every mark appears in every
 tile as you make it.
 
-Everything is vector: the drawing is a list of paths, curves, circles and filled
-regions in tile coordinates, redrawn from those primitives at whatever zoom you
-are at. Nothing is stored as pixels, and `Save SVG` writes real geometry.
+Everything you draw is vector: the drawing is a list of paths, curves, circles
+and filled regions in tile coordinates, redrawn from those primitives at
+whatever zoom you are at, and `Save SVG` writes real geometry. The one thing
+kept as pixels is a PNG pasted in as a picture — an SVG pasted in stays SVG.
 
 **[Open the drawing table →](https://invertedworld.github.io/tesselate/)**
 
@@ -401,6 +402,52 @@ the line rather than being dropped with the other unclaimed shortcuts. The
 shortcuts that take a modifier — undo, save, select all — still answer, so
 nothing is out of reach mid-word.
 
+### Pictures
+
+**Paste a PNG or an SVG** — `⌘V` with one on the clipboard, or drop the file
+on the plane — and it comes in as a picture: a mark like any other, repeated
+across the plane and turned with each tile. It lands in the middle of the view,
+upright on the screen, its longer side three fifths of the tile, and is held by
+the select tool, so it can be **dragged** straight away, **sized** from a corner,
+**turned** by the ring beside one or the turn buttons, **mirrored**, stacked,
+grouped, copied and rubbed out. An SVG can come as a file or as its markup
+copied as text.
+
+A picture is **kept in the drawing**, not beside it: the file it came as is
+written into the mark as a data URL, so it goes into the saved `.json`, onto the
+clipboard with a copy, into the undo history and into `Save SVG` — where it is
+an `<image>` inside the tile — and a drawing with pictures in it opens anywhere
+with nothing else to carry. An SVG is kept as SVG, so it stays sharp at any
+zoom, with any scripts in it taken out; a PNG is kept exactly as it came unless
+it is bigger than the drawing can carry. The drawing in progress is kept in the
+browser's own storage, which holds a few megabytes all told, and one photograph
+pasted as it came would fill it — so a raster larger than 2048 pixels on its
+longer side, or heavier than about a megabyte, is drawn down and written again
+to fit: as WebP where it has any transparency and the browser can write it, as
+JPEG where it has none. A drawing that still outgrows the browser's storage
+says so, once, and is safe only in a file.
+
+It is a picture rather than ink, so the things that set ink leave it be: a
+colour picked or a swatch keyed with one held, the alpha and thickness sliders,
+and the fill tool clicked on it. The eyedropper takes the colour of the pixel
+under it. A picture holds an area the way a solid shape does, so a fill stops
+at its edge, and its corners and edges are snap targets.
+
+The **warp bends it** with everything else. Pixels cannot follow a curve the
+way a line's points can, so the picture is cut into triangles, the corners of
+each carried through the warp, and each drawn as the flat piece of picture that
+lands on it. The cutting follows the warp — fine round the middle of a twirl,
+not at all where no disc reaches, and never so fine that a straight edge of it
+shows against the curve by more than a pixel. A bent copy is drawn once into a
+bitmap for the zoom it is seen at and painted from that until the warp, the
+picture or the zoom changes, so panning over it costs no more than over a
+picture lying flat. `Save SVG` writes the same cut, a clipped piece of the one
+picture at a time, so a strongly twirled picture makes a heavy file.
+
+A file may carry a picture only as a data URL of its own. One naming a file
+anywhere else is dropped on the way in, since the browser would fetch it, and a
+picture from another site would stop the PNG export and the eyedropper working.
+
 ### Off the table
 
 Everything the table itself does is a toolbar at the top of the rail: undo and
@@ -458,7 +505,10 @@ shapes has none and opens as squares. A mark in a group carries
 carries `groups`, the whole chain, outermost first. A stroke or fill in a
 gradient that lies across the tile says so with `"across":"tile"` beside its
 `color`, or `"fillAcross":"tile"` beside its `fillColor`; without it the sweep
-lies across the mark.
+lies across the mark. A picture is `"kind":"image"`, with `pts` the four
+corners it is drawn to — top left, top right, bottom right, bottom left of the
+picture as it came — `src` the picture itself as a data URL, and `iw` and `ih`
+its size in its own pixels.
 
 Where the browser has the File System Access API (**Chrome and Edge only** —
 Safari and Firefox have none), the file you opened or saved is **kept**: *Save* writes straight back to it without asking

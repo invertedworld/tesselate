@@ -293,7 +293,7 @@ function warpRuns(s) {
       const { x, y, w, h } = s;
       return [polyRun([{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], true)];
     }
-    case 'poly': return s.pts.length ? [polyRun(s.pts, true)] : [];
+    case 'poly': case 'image': return s.pts.length ? [polyRun(s.pts, true)] : [];
     case 'region': return s.loops.filter((l) => l.length >= 3).map((l) => polyRun(l, true));
     case 'path': {
       // The same quadratics through the midpoints buildPath draws.

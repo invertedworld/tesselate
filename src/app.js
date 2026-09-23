@@ -1022,6 +1022,7 @@
      the warp bends can be found; without them the mark goes down as it
      lies. */
   function paintShape(s, hair, part, i, j) {
+    if (s.kind === 'image') { paintImage(ctx, s, i, j); return; }
     const bent = i == null ? null : warpedCopy(s, part, i, j, paintWarp);
     const p = bent ? bentPath(bent) : s === draft ? draftPath : pathOf(s);
     if (s.layer === 'fill') {
@@ -1050,6 +1051,212 @@
       if (!bent) paintJunctions(ctx, s, w);
       else if (bent.discs.length) ctx.fill(bentPath(bent, 'discs'));
     }
+  }
+
+  /* ---- pictures ----
+     A picture is decoded once and kept against its data URL, so every
+     copy of it across the plane, and every mark pasted from the same
+     file, draws from the one image. Until it has decoded there is nothing
+     to draw, and the plane is asked for again when it has. */
+  const pictures = new Map();
+  function pictureOf(src) {
+    let got = pictures.get(src);
+    if (!got) {
+      const img = new Image();
+      got = { img, ready: false, failed: false };
+      img.onload = () => { got.ready = true; requestDraw(); };
+      img.onerror = () => { got.failed = true; };
+      img.src = src;
+      pictures.set(src, got);
+    }
+    return got.ready ? got.img : null;
+  }
+
+  /* The picture through the affine its corners make of it — or, where
+     the warp reaches this copy (`i`, `j`), bent with the plane: see
+     imageMesh. */
+  function paintImage(g, s, i, j) {
+    const img = pictureOf(s.src);
+    if (!img) return;
+    g.save();
+    g.imageSmoothingQuality = 'high';
+    const mesh = i == null ? null : imageMesh(s, i, j);
+    if (!mesh) {
+      const m = imageMatrix(s);
+      g.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      g.drawImage(img, 0, 0, s.iw, s.ih);
+      g.restore();
+      return;
+    }
+    const b = meshBitmap(s, img, mesh);
+    if (b) g.drawImage(b.canvas, b.x0, b.y0, b.w, b.h);
+    g.restore();
+  }
+
+  /* A bent copy is drawn once, into a bitmap at the zoom step it was cut
+     for, and that is what the plane paints from then on: a pan, a click,
+     another mark moving, all cost one image per copy rather than a clip
+     and a draw for every triangle. Kept against the mesh, which is itself
+     kept against the mark, the warp and the zoom step, so it goes when any
+     of those change. */
+  const MESH_PX = 4096;      // the widest a bent copy's bitmap may be
+  const meshBitmaps = new WeakMap();
+  function meshBitmap(s, img, mesh) {
+    let got = meshBitmaps.get(mesh);
+    if (got) return got;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const t of mesh) {
+      for (const p of t.d) {
+        x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+      }
+    }
+    if (!(x1 > x0 && y1 > y0)) return null;
+    // The near end of the zoom step, so the bitmap is never drawn up.
+    const step = Math.round(Math.log2(state.view.scale) * 2);
+    let k = Math.pow(2, (step + 1) / 2) * dpr;
+    k = Math.min(k, MESH_PX / (x1 - x0), MESH_PX / (y1 - y0));
+    const pad = 2 / k;
+    x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil((x1 - x0) * k));
+    c.height = Math.max(1, Math.ceil((y1 - y0) * k));
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    /* Each triangle's clip is let out a little past its edges, so the
+       triangles overlap by a hair: cut exactly, every edge of the mesh
+       showed as a faint line of paper through the picture. */
+    const grow = 0.7 / k;
+    const kx = img.naturalWidth / s.iw || 1, ky = img.naturalHeight / s.ih || 1;
+    for (const t of mesh) {
+      const q = grown(t.d, grow);
+      const m = t.m;
+      g.save();
+      g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+      g.beginPath();
+      g.moveTo(q[0].x, q[0].y); g.lineTo(q[1].x, q[1].y); g.lineTo(q[2].x, q[2].y);
+      g.closePath();
+      g.clip();
+      g.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      // Only the part of the picture this triangle shows, and a pixel round it.
+      const [sx0, sy0, sx1, sy1] = t.src;
+      g.drawImage(img, sx0 * kx, sy0 * ky, (sx1 - sx0) * kx, (sy1 - sy0) * ky, sx0, sy0, sx1 - sx0, sy1 - sy0);
+      g.restore();
+    }
+    got = { canvas: c, x0, y0, w: x1 - x0, h: y1 - y0 };
+    meshBitmaps.set(mesh, got);
+    return got;
+  }
+
+  /* A picture under the warp. Pixels cannot be bent the way a line's
+     points can, so the picture is cut into triangles, the corners of
+     each are carried through the warp as the points of a line would be,
+     and each triangle is drawn as the flat piece of picture that lands
+     on it. The cutting follows the warp: a piece is cut in four only
+     while the warp bends it further from straight than a pixel on
+     screen, or a unit in an SVG — finer costs more than it shows — so
+     the picture is cut fine round the middle of a twirl and not at all
+     where no disc reaches. A piece a disc could hide inside without
+     touching any corner of it is cut regardless, down to half the
+     smallest disc across. Kept against the mark, the warp and the
+     zoom step, the way the warped copies of a line are. Null where the
+     warp does not reach this copy. */
+  const meshCache = new WeakMap();
+  function imageMesh(s, i, j, fine) {
+    const f = warpField();
+    if (!f.active) return null;
+    const step = Math.round(Math.log2(state.view.scale) * 2);
+    const key = `${f.sig}|${fine ? 'svg' : step}|`
+      + (f.tiled ? tiling().key(state.pattern, i, j) : `${i},${j}`);
+    let byKey = meshCache.get(s);
+    if (!byKey) meshCache.set(s, (byKey = new Map()));
+    if (byKey.has(key)) return byKey.get(key);
+    if (byKey.size > 64) byKey.clear();
+    const box = copyBox(s, i, j);
+    const mesh = box && f.touches(box) ? cutMesh(s, i, j, f, fine) : null;
+    byKey.set(key, mesh);
+    return mesh;
+  }
+
+  const MESH_DEEP = 6;       // at most 64 pieces a side
+
+  function cutMesh(s, i, j, f, fine) {
+    // A pixel on screen at the near end of the zoom step, so it holds across it.
+    const tol = fine ? 1 : 1 / Math.pow(2, (Math.round(Math.log2(state.view.scale) * 2) + 1) / 2);
+    const [p0, p1, , p3] = s.pts;
+    const at = (u, v) => ({ x: p0.x + (p1.x - p0.x) * u + (p3.x - p0.x) * v, y: p0.y + (p1.y - p0.y) * u + (p3.y - p0.y) * v });
+    const seen = new Map();
+    const W = (u, v) => {
+      const k = `${u},${v}`;
+      let q = seen.get(k);
+      if (!q) { q = unplaceIn(f.warp(placeIn(at(u, v), i, j)), i, j); seen.set(k, q); }
+      return q;
+    };
+    const side = Math.max(Math.hypot(p1.x - p0.x, p1.y - p0.y), Math.hypot(p3.x - p0.x, p3.y - p0.y));
+    const least = clamp(Math.ceil(Math.log2(side / (f.minR / 2))), 0, MESH_DEEP);
+    const reached = (u0, v0, u1, v1) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [u, v] of [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]) {
+        const w = placeIn(at(u, v), i, j);
+        x0 = Math.min(x0, w.x); y0 = Math.min(y0, w.y); x1 = Math.max(x1, w.x); y1 = Math.max(y1, w.y);
+      }
+      return f.touches({ x0, y0, x1, y1 });
+    };
+    const off = (p, q, r) => Math.hypot(p.x - (q.x + r.x) / 2, p.y - (q.y + r.y) / 2);
+    const tris = [];
+    const piece = (u0, v0, u1, v1, d) => {
+      const a = W(u0, v0), b = W(u1, v0), c = W(u1, v1), e = W(u0, v1);
+      if (d < MESH_DEEP) {
+        const um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
+        let cut = d < least && reached(u0, v0, u1, v1);
+        if (!cut) {
+          const m = W(um, vm);
+          cut = Math.max(off(m, a, c), off(m, b, e), off(W(um, v0), a, b), off(W(u1, vm), b, c),
+            off(W(um, v1), e, c), off(W(u0, vm), a, e)) > tol;
+        }
+        if (cut) {
+          piece(u0, v0, um, vm, d + 1); piece(um, v0, u1, vm, d + 1);
+          piece(u0, vm, um, v1, d + 1); piece(um, vm, u1, v1, d + 1);
+          return;
+        }
+      }
+      const S = (u, v) => ({ x: u * s.iw, y: v * s.ih });
+      for (const [A, B, C, sa, sb, sc] of [
+        [a, b, c, S(u0, v0), S(u1, v0), S(u1, v1)],
+        [a, c, e, S(u0, v0), S(u1, v1), S(u0, v1)],
+      ]) {
+        const m = triangleAffine(sa, sb, sc, A, B, C);
+        if (!m) continue;
+        tris.push({
+          d: [A, B, C], m,
+          src: [
+            Math.max(0, Math.min(sa.x, sb.x, sc.x) - 1), Math.max(0, Math.min(sa.y, sb.y, sc.y) - 1),
+            Math.min(s.iw, Math.max(sa.x, sb.x, sc.x) + 1), Math.min(s.ih, Math.max(sa.y, sb.y, sc.y) + 1),
+          ],
+        });
+      }
+    };
+    piece(0, 0, 1, 1, 0);
+    return tris;
+  }
+
+  // The affine taking three points of the picture onto where they landed.
+  function triangleAffine(sa, sb, sc, P, Q, R) {
+    const ux = sb.x - sa.x, uy = sb.y - sa.y, vx = sc.x - sa.x, vy = sc.y - sa.y;
+    const det = ux * vy - vx * uy;
+    if (!det) return null;
+    const qx = Q.x - P.x, qy = Q.y - P.y, rx = R.x - P.x, ry = R.y - P.y;
+    const m0 = (qx * vy - rx * uy) / det, m2 = (rx * ux - qx * vx) / det;
+    const m1 = (qy * vy - ry * uy) / det, m3 = (ry * ux - qy * vx) / det;
+    return [m0, m1, m2, m3, P.x - m0 * sa.x - m2 * sa.y, P.y - m1 * sa.x - m3 * sa.y];
+  }
+
+  // A triangle with its corners pushed out from its middle by `d`.
+  function grown(c, d) {
+    const mx = (c[0].x + c[1].x + c[2].x) / 3, my = (c[0].y + c[1].y + c[2].y) / 3;
+    return c.map((p) => {
+      const dx = p.x - mx, dy = p.y - my, len = Math.hypot(dx, dy) || 1;
+      return { x: p.x + (dx / len) * d * 2, y: p.y + (dy / len) * d * 2 };
+    });
   }
 
   /* ---- warped copies ----
@@ -1266,7 +1473,7 @@
     /* One colour for the whole of what is held: vermilion, or dark where
        any of it is in the vermilion itself, which a vermilion ring would
        only seem to thicken. */
-    const vermilion = shapes.some((sh) => rgbOf(sh.color) === ACCENT
+    const vermilion = shapes.some((sh) => (sh.color && rgbOf(sh.color) === ACCENT)
       || (!!sh.fillColor && rgbOf(sh.fillColor) === ACCENT));
     hctx.setTransform(1, 0, 0, 1, 0, 0);
     hctx.globalCompositeOperation = 'source-in';
@@ -3041,12 +3248,26 @@
       + marks.map((sh) => '  ' + JSON.stringify(sh)).join(',\n') + '\n ]\n}\n';
   }
 
+  /* Whether a mark read from outside — a file, the clipboard, storage —
+     can be put on the table. A picture has to carry its own pixels as a
+     data URL: one pointing anywhere else would be fetched, and a picture
+     from another site taints the canvas, which stops the PNG export and
+     the eyedropper dead. */
+  function soundMark(sh) {
+    if (!sh || !sh.kind) return false;
+    if (sh.kind !== 'image') return true;
+    return typeof sh.src === 'string' && /^data:image\/(png|jpeg|gif|webp|svg\+xml)[;,]/.test(sh.src)
+      && Array.isArray(sh.pts) && sh.pts.length === 4
+      && sh.pts.every((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+      && sh.iw > 0 && sh.ih > 0;
+  }
+
   function marksFromText(text) {
     let d = null;
     try { d = JSON.parse(text); } catch (err) { return null; }
     const list = d && (Array.isArray(d.marks) ? d.marks : Array.isArray(d.shapes) ? d.shapes : null);
     if (!list) return null;
-    const marks = list.filter((sh) => sh && sh.kind);
+    const marks = list.filter(soundMark);
     marks.forEach(settleAcross);
     return marks.length ? marks : null;
   }
@@ -3120,6 +3341,184 @@
     if (text && e.clipboardData) e.clipboardData.setData('text/plain', text);
   });
 
+  /* ---- pictures in ----
+     A PNG or an SVG on the clipboard, or dropped on the plane, comes in as
+     a picture mark: held, in the Select tool, so it can be moved, sized by
+     its corners and turned by the ring at once. It is kept in the drawing
+     as a data URL — in the file, the undo stack, the clipboard copy of it
+     — so it goes wherever the drawing goes and needs nothing beside it.
+
+     An SVG is kept as SVG, so it stays sharp however far in it is looked
+     at. Anything else raster is kept as it came unless it is bigger than
+     there is any use for, or heavier than the drawing can carry: the
+     drawing is kept in the browser's own storage as it goes, which holds
+     a few megabytes all told, and one photograph pasted as it came would
+     fill it, so that nothing after it was kept. Such a picture is drawn
+     down to PICTURE_MAX on its longer side and written again to fit
+     PICTURE_CHARS — as WebP where the browser can write it and the
+     picture has any transparency, as JPEG where it has none, a step
+     smaller each time until it fits. */
+  const PICTURE_MAX = 2048;       // longest side a raster is kept at, in its own pixels
+  const PICTURE_CHARS = 1.5e6;    // the most a picture's data URL may run to
+  const PICTURE_FIT = 0.6;        // of the tile, the longer side a picture lands at
+
+  const SVG_TEXT = /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i;
+
+  const readAsUrl = (blob) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+
+  const decoded = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('not a picture'));
+    img.src = src;
+  });
+
+  /* SVG text as a picture. It is given a width and a height of its own —
+     from its viewBox where it has one — since without them an SVG has no
+     size to be drawn at, and some browsers will not draw it at all. Its
+     scripts go: a picture drawn from a data URL never runs them, but the
+     file is written back out in the SVG export, and there is no call for
+     them there either. */
+  async function pictureFromSvg(text) {
+    const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    const root = doc.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return null;
+    for (const el of root.querySelectorAll('script, foreignObject')) el.remove();
+    for (const el of [root, ...root.querySelectorAll('*')]) {
+      for (const a of [...el.attributes]) if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+    }
+    const num = (v) => {
+      const m = /^\s*([\d.]+)\s*(px)?\s*$/.exec(v || '');
+      return m ? +m[1] : 0;
+    };
+    const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    let w = num(root.getAttribute('width')), h = num(root.getAttribute('height'));
+    const hasBox = vb.length === 4 && vb[2] > 0 && vb[3] > 0;
+    if (!(w && h)) {
+      if (hasBox) {
+        // One side given keeps the box's proportions for the other.
+        if (w) h = (w * vb[3]) / vb[2];
+        else if (h) w = (h * vb[2]) / vb[3];
+        else { w = vb[2]; h = vb[3]; }
+      } else { w = w || 300; h = h || 150; }
+    }
+    root.setAttribute('width', w);
+    root.setAttribute('height', h);
+    if (!root.getAttribute('xmlns')) root.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const out = new XMLSerializer().serializeToString(root);
+    const bytes = new TextEncoder().encode(out);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const src = 'data:image/svg+xml;base64,' + btoa(bin);
+    await decoded(src);
+    return { src, iw: w, ih: h };
+  }
+
+  async function pictureFromBlob(blob) {
+    if (blob.type === 'image/svg+xml') return pictureFromSvg(await blob.text());
+    const src = await readAsUrl(blob);
+    const img = await decoded(src);
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return null;
+    let k = Math.min(1, PICTURE_MAX / Math.max(w, h));
+    if (k === 1 && src.length <= PICTURE_CHARS && /^data:image\/(png|jpeg|gif|webp)[;,]/.test(src)) {
+      return { src, iw: w, ih: h };
+    }
+    const c = document.createElement('canvas');
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const draw = () => {
+      c.width = Math.max(1, Math.round(w * k));
+      c.height = Math.max(1, Math.round(h * k));
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(img, 0, 0, c.width, c.height);
+    };
+    draw();
+    // Any pixel short of opaque, and the picture needs its alpha kept.
+    const px = g.getImageData(0, 0, c.width, c.height).data;
+    let clear = false;
+    for (let i = 3; i < px.length; i += 4) if (px[i] < 255) { clear = true; break; }
+    const write = () => {
+      const png = c.toDataURL('image/png');
+      if (png.length <= PICTURE_CHARS) return png;
+      if (!clear) return c.toDataURL('image/jpeg', 0.9);
+      const webp = c.toDataURL('image/webp', 0.9);
+      // A browser that cannot write WebP hands back a PNG instead.
+      return webp.startsWith('data:image/webp') ? webp : png;
+    };
+    let out = write();
+    while (out.length > PICTURE_CHARS && Math.max(c.width, c.height) > 256) {
+      k *= 0.75;
+      draw();
+      out = write();
+    }
+    return { src: out, iw: c.width, ih: c.height };
+  }
+
+  /* Lands upright on the screen, in the middle of the view, in whichever
+     tile is there — its corners taken back into that tile's own frame, so
+     in a turned tile it is the mark that is turned, not the picture as
+     you see it. */
+  function placePicture(pic) {
+    cancelDraft();
+    const w0 = toWorld(cw / 2, ch / 2);
+    const tile = cellOf(w0);
+    const side = PICTURE_FIT * T * state.view.scale;
+    const k = side / Math.max(pic.iw, pic.ih);
+    const hw = (pic.iw * k) / 2, hh = (pic.ih * k) / 2;
+    const pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]
+      .map(([dx, dy]) => unplaceIn(toWorld(cw / 2 + dx, ch / 2 + dy), tile.i, tile.j));
+    const mark = {
+      id: shapeSeq++, kind: 'image', layer: 'stroke', filled: true, width: 0,
+      pts, src: pic.src, iw: pic.iw, ih: pic.ih,
+    };
+    setTool('select');
+    replaceShapes(state.shapes.concat([mark]));
+    select([mark], tile);
+    flash('Picture placed — drag to move it, a corner to size it, the ring beside one to turn it');
+  }
+
+  async function takePicture(what) {
+    try {
+      const pic = typeof what === 'string' ? await pictureFromSvg(what) : await pictureFromBlob(what);
+      if (!pic) return flash('That is not a picture this can read');
+      placePicture(pic);
+    } catch (err) {
+      flash('That picture could not be read');
+    }
+  }
+
+  // A picture on a paste or a drop, if there is one: a file first, then SVG as text.
+  function pictureIn(data) {
+    if (!data) return null;
+    for (const f of data.files || []) if (/^image\//.test(f.type)) return f;
+    for (const item of data.items || []) {
+      if (item.kind === 'file' && /^image\//.test(item.type)) {
+        const f = item.getAsFile();
+        if (f) return f;
+      }
+    }
+    const text = data.getData ? data.getData('text/plain') : '';
+    return SVG_TEXT.test(text) ? text : null;
+  }
+
+  canvas.addEventListener('dragover', (e) => {
+    if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+  canvas.addEventListener('drop', (e) => {
+    const pic = pictureIn(e.dataTransfer);
+    if (!pic) return;
+    e.preventDefault();
+    takePicture(pic);
+  });
+
   document.addEventListener('paste', (e) => {
     if (inField(e.target)) return;
     e.preventDefault();
@@ -3127,6 +3526,8 @@
     // or it came too late, after the key already had.
     if (pasteWait) { clearTimeout(pasteWait); pasteWait = 0; }
     else if (performance.now() - pastedByKeyAt < 1500) return;
+    const pic = pictureIn(e.clipboardData);
+    if (pic) return takePicture(pic);
     const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
     pasteMarks(marksFromText(text) || clipboard);
   });
@@ -3157,10 +3558,24 @@
     pasteWait = setTimeout(() => {
       pasteWait = 0;
       pastedByKeyAt = performance.now();
-      const read = navigator.clipboard && navigator.clipboard.readText
-        ? navigator.clipboard.readText()
-        : Promise.reject(new Error('no clipboard to read'));
-      read.then((text) => pasteMarks(marksFromText(text) || clipboard), () => pasteMarks(clipboard));
+      // A picture on the clipboard, where it can be asked for.
+      const image = navigator.clipboard && navigator.clipboard.read
+        ? navigator.clipboard.read().then(async (items) => {
+          for (const item of items) {
+            const type = item.types.find((t) => /^image\//.test(t));
+            if (type) return item.getType(type);
+          }
+          return null;
+        }).catch(() => null)
+        : Promise.resolve(null);
+      image.then((blob) => {
+        if (blob) return takePicture(blob);
+        const read = navigator.clipboard && navigator.clipboard.readText
+          ? navigator.clipboard.readText()
+          : Promise.reject(new Error('no clipboard to read'));
+        read.then((text) => (SVG_TEXT.test(text) ? takePicture(text) : pasteMarks(marksFromText(text) || clipboard)),
+          () => pasteMarks(clipboard));
+      });
     }, 80);
   }
 
@@ -3412,6 +3827,7 @@
   }
 
   function recolour(shape) {
+    if (shape.kind === 'image') return flash('A picture takes no ink');
     if (wears(shape, 'color')) return flash('Already that ink');
     const next = Object.assign({}, shape, inkFor('color'));
     replaceShapes(state.shapes.map((sh) => (sh === shape ? next : sh)));
@@ -3422,7 +3838,7 @@
   // Every mark bound up with this one takes the ink: fills, borders, and
   // the inside of any mark that carries one.
   function recolourFigure(shape) {
-    const members = new Set(groupOf(shape));
+    const members = new Set(groupOf(shape).filter((sh) => sh.kind !== 'image'));
     const has = (sh) => wears(sh, 'color') && (!sh.fillColor || wears(sh, 'fillColor'));
     if ([...members].every(has)) return flash('Already that ink');
     const swap = new Map();
@@ -4713,6 +5129,7 @@
       // A stroke that already wore a sweep keeps the way it lay; one taking
       // a sweep for the first time lies the way the hand says.
       for (const sh of heldMarks()) {
+        if (sh.kind === 'image') continue;   // a picture takes no ink
         if (sh.color !== hex) swap.set(sh, Object.assign({}, sh, parseInk(sh.color) ? { color: hex } : inkFor('color')));
       }
       if (swap.size) {
@@ -4749,7 +5166,8 @@
     armDropper(false);
     const border = hitTest(w, { strokesOnly: true, edgeOnly: true, anyTile: true });
     const mark = border || hitTest(w, { interior: true, anyTile: true });
-    if (mark) {
+    // A picture has no ink of its own; what is under the pointer is taken off the paper.
+    if (mark && mark.kind !== 'image') {
       const slot = !border && mark.layer === 'stroke' && !mark.filled && mark.fillColor
         ? 'fillColor'
         : 'color';
@@ -5634,6 +6052,7 @@
     if (!held.length) return;
     const swap = new Map();
     for (const sh of held) {
+      if (sh.kind === 'image') continue;     // a picture takes no ink
       const next = fn(sh);
       if (next) swap.set(sh, next);
     }
@@ -6467,7 +6886,7 @@
     let d = null;
     try { d = JSON.parse(text); } catch (err) { return flash('That file is not JSON'); }
     if (!d || !Array.isArray(d.shapes)) return flash('No drawing in that file');
-    const marks = d.shapes.filter((sh) => sh && sh.kind);
+    const marks = d.shapes.filter(soundMark);
     if (!marks.length) return flash('No marks in that file');
 
     /* A file from before there were shapes has none, and is squares. Its
@@ -6712,12 +7131,47 @@
     const order = paintOrder(state.shapes);
     findCrossJunctions();
     const svgWarp = { tol: 0.25, bucket: 'svg', ink: state.warp.ink };
+    // Each picture once, however many places show it.
+    const pictureIds = new Map();
+    let clipSeq = 0;
+    const pictureDef = (s) => {
+      let id = pictureIds.get(s.src);
+      if (!id) {
+        id = `picture-${pictureIds.size + 1}`;
+        pictureIds.set(s.src, id);
+        defs.push(`<image id="${id}" href="${s.src}" xlink:href="${s.src}" width="${s.iw}" height="${s.ih}" preserveAspectRatio="none"/>`);
+      }
+      return id;
+    };
     const marksFor = (at) => {
       const out = [];
       let bent = false;
       for (const entry of order) {
         // A mark's interior comes through on its own, at fill depth.
         const s = entry.inside || entry;
+        if (s.kind === 'image') {
+          /* The picture goes in once, as the file it came as, and every
+             place it shows points at it. Where the warp reaches a copy it
+             goes in as the mesh the plane draws: a triangle of it at a
+             time, each clipped to where it landed. */
+          const id = pictureDef(s);
+          const mesh = at ? imageMesh(s, at.i, at.j, true) : null;
+          if (!mesh) {
+            const m = imageMatrix(s).map((v) => +v.toFixed(6)).join(' ');
+            out.push(`<use href="#${id}" xlink:href="#${id}" transform="matrix(${m})"/>`);
+            continue;
+          }
+          bent = true;
+          for (const t of mesh) {
+            const m = t.m;
+            const q = grown(t.d, 0.25);
+            const clip = `clip${++clipSeq}`;
+            defs.push(`<clipPath id="${clip}"><path d="M${q.map((p) => `${n2(p.x)} ${n2(p.y)}`).join('L')}Z"/></clipPath>`);
+            out.push(`<g clip-path="url(#${clip})"><use href="#${id}" xlink:href="#${id}"`
+              + ` transform="matrix(${m.map((v) => +v.toFixed(6)).join(' ')})"/></g>`);
+          }
+          continue;
+        }
         const part = entry.inside ? 'inside' : s.fillColor ? 'outline' : undefined;
         const got = at ? warpedCopy(s, part, at.i, at.j, svgWarp) : null;
         if (got) bent = true;
@@ -6808,6 +7262,7 @@
   const KEY = 'tesselate.v1';
   const WAS_KEY = 'tessera.v1';   // what the table was called before
   let saveTimer = 0;
+  let warnedFull = false;
   function saveSoon() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -6821,7 +7276,15 @@
           grid: state.grid, arrows: state.arrows, snap: state.snap, sub: state.sub,
           subLast: state.subLast, diag: state.diag, warp: state.warp, smooth: state.smooth,
         }));
-      } catch (err) { /* private mode, quota — not worth interrupting for */ }
+      } catch (err) {
+        /* Private mode is not worth interrupting for. Running out of room
+           is: pictures are big, and a drawing that cannot be kept here is
+           lost with the tab unless it goes to a file. Said once a run. */
+        if (!warnedFull && err && err.name === 'QuotaExceededError') {
+          warnedFull = true;
+          flash('Too big to keep in this browser — save it to a file');
+        }
+      }
     }, 400);
   }
 
@@ -6833,7 +7296,7 @@
       d = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem(WAS_KEY) || 'null');
     } catch (err) { d = null; }
     if (!d) return;
-    if (Array.isArray(d.shapes)) state.shapes = d.shapes.filter((s) => s && s.kind);
+    if (Array.isArray(d.shapes)) state.shapes = d.shapes.filter(soundMark);
     adoptIds(state.shapes);
     const p = validPattern(d.pattern);
     if (p) state.pattern = p;

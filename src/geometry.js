@@ -1,10 +1,11 @@
 /* ------------------------------------------------------------------
    geometry.js — vector primitives, path building, contour tracing
    Everything here works in TILE UNITS: the drawing tile is the
-   square [0,T] x [0,T]. No raster data is ever stored in the model;
+   square [0,T] x [0,T]. Nothing the tools make is stored as pixels;
    the bitmap in traceRegion() is a scratch buffer used only to
    discover the boundary of a filled area, which is then emitted as
-   a vector polygon.
+   a vector polygon. The one exception is a picture pasted in, which
+   is kept as the file it came as — see `image` below.
    ------------------------------------------------------------------ */
 
 const T = 1000;
@@ -55,7 +56,7 @@ function buildPath(shape) {
     case 'rect':
       p.rect(shape.x, shape.y, shape.w, shape.h);
       break;
-    case 'poly':
+    case 'poly': case 'image':
       if (!shape.pts.length) break;
       p.moveTo(shape.pts[0].x, shape.pts[0].y);
       for (let i = 1; i < shape.pts.length; i++) p.lineTo(shape.pts[i].x, shape.pts[i].y);
@@ -103,7 +104,7 @@ function pathData(shape) {
     }
     case 'rect':
       return `M${n2(shape.x)} ${n2(shape.y)}h${n2(shape.w)}v${n2(shape.h)}h${n2(-shape.w)}Z`;
-    case 'poly':
+    case 'poly': case 'image':
       if (!shape.pts.length) return '';
       return 'M' + shape.pts.map((p) => `${n2(p.x)} ${n2(p.y)}`).join('L') + 'Z';
     case 'region':
@@ -450,6 +451,26 @@ function keepRecipe(out, s, m) {
   if (s.type) out.type = Object.assign({}, s.type, { m: mulAffine(m, s.type.m || IDENT) });
 }
 
+/* ---- Pictures ---------------------------------------------------
+
+   A picture pasted in is a mark like any other as far as moving it goes:
+   it is held as the four corners it is drawn to — top left, top right,
+   bottom right, bottom left of the picture as it came — in `pts`, so
+   every move, sizing, turn and mirror that carries a polygon carries it,
+   and nothing that works on marks has to know what it holds. The
+   picture itself is `src`, a data URL of the file as pasted (PNG, or SVG
+   kept as SVG so it stays sharp at any zoom), and `iw` × `ih`, the size
+   it was drawn at in its own pixels. It is drawn through the affine its
+   corners make of that box, so a picture mirrored reads backwards. */
+function imageMatrix(s) {
+  const [p0, p1, , p3] = s.pts;
+  return [
+    (p1.x - p0.x) / s.iw, (p1.y - p0.y) / s.iw,
+    (p3.x - p0.x) / s.ih, (p3.y - p0.y) / s.ih,
+    p0.x, p0.y,
+  ];
+}
+
 /* ---- Moving shapes about --------------------------------------- */
 
 // Returns a NEW shape: shapes are treated as immutable so the undo
@@ -466,7 +487,7 @@ function scaleShape(s, cx, cy, k) {
   const mp = (p) => ({ x: cx + (p.x - cx) * k, y: cy + (p.y - cy) * k });
   const out = Object.assign({}, s);
   switch (s.kind) {
-    case 'path': case 'poly': out.pts = s.pts.map(mp); break;
+    case 'path': case 'poly': case 'image': out.pts = s.pts.map(mp); break;
     case 'line': out.a = mp(s.a); out.b = mp(s.b); break;
     case 'curve': out.a = mp(s.a); out.b = mp(s.b); out.c = mp(s.c); break;
     case 'circle': out.c = mp(s.c); out.r = Math.abs(s.r * k); break;
@@ -493,7 +514,7 @@ function flipShape(s, cx, cy, axis) {
   switch (s.kind) {
     // A loop turned over runs the other way round; even-odd filling does
     // not care, and neither does a stroke.
-    case 'path': case 'poly': out.pts = s.pts.map(mp); break;
+    case 'path': case 'poly': case 'image': out.pts = s.pts.map(mp); break;
     case 'line': out.a = mp(s.a); out.b = mp(s.b); break;
     case 'curve': out.a = mp(s.a); out.b = mp(s.b); out.c = mp(s.c); break;
     case 'circle': out.c = mp(s.c); break;
@@ -517,7 +538,7 @@ function rotateShape(s, cx, cy, ang) {
   };
   const out = Object.assign({}, s);
   switch (s.kind) {
-    case 'path': case 'poly': out.pts = s.pts.map(mp); break;
+    case 'path': case 'poly': case 'image': out.pts = s.pts.map(mp); break;
     case 'line': out.a = mp(s.a); out.b = mp(s.b); break;
     case 'curve': out.a = mp(s.a); out.b = mp(s.b); out.c = mp(s.c); break;
     case 'circle': out.c = mp(s.c); break;
@@ -538,7 +559,7 @@ function translateShape(s, dx, dy) {
   const mp = (p) => ({ x: p.x + dx, y: p.y + dy });
   const out = Object.assign({}, s);
   switch (s.kind) {
-    case 'path': case 'poly': out.pts = s.pts.map(mp); break;
+    case 'path': case 'poly': case 'image': out.pts = s.pts.map(mp); break;
     case 'line': out.a = mp(s.a); out.b = mp(s.b); break;
     case 'curve': out.a = mp(s.a); out.b = mp(s.b); out.c = mp(s.c); break;
     case 'circle': out.c = mp(s.c); break;
@@ -556,7 +577,7 @@ function shapeBBox(s) {
   const add = (x, y) => { addX(x); addY(y); };
 
   switch (s.kind) {
-    case 'path': case 'poly': for (const p of s.pts) add(p.x, p.y); break;
+    case 'path': case 'poly': case 'image': for (const p of s.pts) add(p.x, p.y); break;
     case 'line': add(s.a.x, s.a.y); add(s.b.x, s.b.y); break;
     case 'curve': {
       // Use the curve's own turning point, not the control point,
@@ -595,7 +616,7 @@ function shapeBBox(s) {
    dragging it with snapping on lands it back on the lattice. */
 function anchorOf(s) {
   switch (s.kind) {
-    case 'path': case 'poly': return s.pts[0];
+    case 'path': case 'poly': case 'image': return s.pts[0];
     case 'line': case 'curve': return s.a;
     case 'circle': return s.c;
     case 'rect': return { x: s.x, y: s.y };
@@ -801,7 +822,7 @@ function snapPointsOf(s) {
         { x: s.x, y: s.y + s.h, kind: 'corner' },
         { x: s.x + s.w / 2, y: s.y + s.h / 2, kind: 'centre' },
       ];
-    case 'poly':
+    case 'poly': case 'image':
       return s.pts.map((p) => at(p, 'corner'));
     case 'path':
       // Freehand ignores the lattice, but where it started and stopped
@@ -889,7 +910,7 @@ function nearestOnShape(s, v) {
         { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y },
         { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h },
       ], v, true);
-    case 'poly':
+    case 'poly': case 'image':
       return nearestOnPolyline(s.pts, v, true);
     case 'path':
       return s.pts.length > 1 ? nearestOnPolyline(s.pts, v, false) : null;
