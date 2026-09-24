@@ -389,7 +389,8 @@ coordinates, so one def serves every copy the sheet instances.
 Ink `1`–`9`,`0` (the first ten of the palette in hand) · weight `[` `]` ·
 undo/redo `⌘Z` / `⇧⌘Z` · cut/copy/paste `⌘X` `⌘C` `⌘V` · duplicate `⌘D` ·
 select all `⌘A` · group `G` / ungroup `U` (or `⌘G` / `⇧⌘G`) · eyedropper `I` ·
-recentre `H` ·
+recentre `H` · zoom to what is held `Z` (with nothing held, to everything on
+the tile) ·
 show tiles `X` · snapping `S` · grid size `D`
 
 `Shift` suspends snapping, or asks for it while it is off · `Alt` (or `Ctrl`)
@@ -636,8 +637,17 @@ Three grids to draft on:
   together, so a tile-aligned square reads as a diamond on screen. Drawing
   works unchanged; the pointer is mapped back through the angle.
 
+**Thickness is how thick a stroke looks as you draw it**, not how thick it is on
+the tile. At the zoom a fresh view is fitted at the two are the same; zoomed in
+eight times over, a 9 draws a line an eighth as thick on the tile, which looks
+9 thick where you are — so you can close in on a corner and draw what to you is
+a fine line, rather than one eight times too heavy. Zoomed out, it works the
+other way. Once down, a mark keeps the width it was given and grows and shrinks
+with the zoom like everything else; the saved file holds widths in tile units,
+as it always has.
+
 **A slider with something in hand works on what is held.** *Thickness* sets every
-stroke held, and *Sweep across* every gradient held. A run of the slider is a
+stroke held — to the thickness it looks at the zoom you are at — and *Sweep across* every gradient held. A run of the slider is a
 single step to undo, not one per pixel of travel. The palette and the ink are
 put away while Select is up, so held marks are recoloured with the number keys,
 or with the fill tool, which recolours whatever it is clicked on.
@@ -798,7 +808,13 @@ square before starting the next would put everything the next square draws over
 everything this one drew, and a fill two squares along would land on a border
 already laid down.
 
-Pinch the trackpad to zoom; two-finger scroll or middle-drag to pan.
+Pinch the trackpad to zoom; two-finger scroll or middle-drag to pan. The zoom
+goes in to 128 pixels a tile unit — the tile 128 000 pixels across, a couple of
+hundred times the fitted view — so detail can be drawn a fraction of a unit
+wide (see *Thickness*). The fill follows: close in, where a cell of the tile's
+own grid would be several pixels across, it floods a grid laid over the view
+alone at about a cell to the pixel, and only an area bigger than the view goes
+back to the tile's grid.
 Work is kept in `localStorage`, so the table is as you left it.
 
 *Save SVG* and *Save PNG* write the marks and nothing else — no grid, no crop

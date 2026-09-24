@@ -196,6 +196,10 @@
   const ACCENT = '#cf4326';
 
   const MAX_TILES = 1500;   // caps how far you can zoom out
+  /* Screen pixels to a tile unit at the closest — the tile 128 000 pixels
+     across, some two hundred times the fitted view — so a detail can be
+     drawn a fraction of a unit wide. */
+  const MAX_ZOOM = 128;
   const FILL_RES = 700;    // scratch resolution for area detection
   const FILL_GROW = 2;      // ~3 tile units, enough to tuck under a stroke
   const FILL_MAX = 1400;    // the widest scratch grid, when one square is not enough
@@ -575,7 +579,7 @@
     const v = state.view;
     v.rot = state.diag === 'plane' ? Math.PI / 4 : 0;
     const s = (Math.min(cw, ch) * (state.diag === 'plane' ? 0.42 : 0.6)) / T;
-    v.scale = clamp(s, minScale(), 8);
+    v.scale = clamp(s, minScale(), MAX_ZOOM);
     // put the tile's centre in the middle of the view, whatever the angle
     const c = Math.cos(v.rot), n = Math.sin(v.rot);
     const { x: mx, y: my } = tiling().c0;
@@ -597,9 +601,37 @@
     requestDraw();
   }
 
+  /* Z: the view fitted round what is held, in the square it is shown in,
+     with a margin — however far in that takes it, up to the closest zoom
+     there is. The view keeps its angle, so the box is measured as the
+     screen has it, 45° plane and all. With nothing held it fits round
+     everything on the tile, and with nothing on the tile it recentres. */
+  const ZOOM_FIT = 0.8;    // of the view the box may fill
+
+  function zoomToHeld() {
+    const held = heldMarks();
+    const marks = held.length ? held : state.shapes;
+    const box = heldBox(marks);
+    if (!box) { resetView(); return; }
+    const f = held.length ? heldFrame() : activeTile;
+    const v = state.view;
+    const c = Math.cos(v.rot), n = Math.sin(v.rot);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]) {
+      const q = placeIn({ x: p[0], y: p[1] }, f.i, f.j);
+      const x = q.x * c - q.y * n, y = q.x * n + q.y * c;
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+    const w = Math.max(x1 - x0, 1e-6), h = Math.max(y1 - y0, 1e-6);
+    v.scale = clamp(Math.min((cw * ZOOM_FIT) / w, (ch * ZOOM_FIT) / h), minScale(), MAX_ZOOM);
+    v.x = cw / 2 - ((x0 + x1) / 2) * v.scale;
+    v.y = ch / 2 - ((y0 + y1) / 2) * v.scale;
+    requestDraw();
+  }
+
   function zoomAt(px, py, factor) {
     const v = state.view;
-    const s1 = clamp(v.scale * factor, minScale(), 8);
+    const s1 = clamp(v.scale * factor, minScale(), MAX_ZOOM);
     if (s1 === v.scale) return;
     v.x = px - (px - v.x) * (s1 / v.scale);
     v.y = py - (py - v.y) * (s1 / v.scale);
@@ -630,10 +662,25 @@
      you finer places to put things. Each level contains the one above
      it, so a mark placed close in still lines up with one placed far
      out. */
+  // The zoom a fresh view is fitted at — the tile three fifths of the
+  // shorter side, a little less on the 45° plane.
+  const fitScale = () => (cw && ch
+    ? (Math.min(cw, ch) * (state.diag === 'plane' ? 0.42 : 0.6)) / T
+    : state.view.scale);
+
+  /* The thickness in hand, in tile units. The slider says how thick a
+     stroke looks as it is drawn, not how thick it is on the tile: 9 at
+     the fitted zoom is 9 units, and 9 zoomed in eight times over is an
+     eighth of that, so a line drawn close in looks as thin as the slider
+     said rather than eight times too heavy. Once down, a mark keeps the
+     width it was given, and grows and shrinks with the zoom like
+     everything else. */
+  const penWidth = () => +((state.width * fitScale()) / state.view.scale).toPrecision(4);
+
   function effSub() {
     if (!state.sub) return 0;
     if (!cw || !ch) return state.sub;
-    const fit = (Math.min(cw, ch) * (state.diag === 'plane' ? 0.42 : 0.6)) / T;
+    const fit = fitScale();
     // A hair of slack, so landing exactly on a doubling counts as one.
     const levels = clamp(Math.floor(Math.log2(state.view.scale / fit) + 1e-3), 0, 5);
     let n = state.sub * Math.pow(2, levels);
@@ -2334,7 +2381,7 @@
 
   function newStroke(extra) {
     return Object.assign({
-      id: shapeSeq++, layer: 'stroke', width: state.width,
+      id: shapeSeq++, layer: 'stroke', width: penWidth(),
     }, inkFor('color'), extra);
   }
 
@@ -3679,7 +3726,9 @@
   }
 
   function hitPass(p, o, pass, fills) {
-    const tol = Math.max(7 / state.view.scale, 2);
+    // Never under two units — until two units is more than 16 pixels,
+    // which close in would reach marks nowhere near the pointer.
+    const tol = Math.max(7 / state.view.scale, Math.min(2, 16 / state.view.scale));
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     let hit = null;
@@ -3928,12 +3977,33 @@
     let ox = 0, oy = 0, span = T, R = FILL_RES, k = R / T;
     let px, barrier, walls, mask, traced, grow, raw, edges, isGround, seeds, dom;
 
+    /* Zoomed in, a cell of the tile's grid is many pixels across, and an
+       area drawn close in — between lines a fraction of a unit thick, a
+       few units apart — is smaller than the grid can see. So close in,
+       the flood is tried first on a grid laid over the view alone, about
+       a cell to the pixel. An area that stays inside it is traced there;
+       one that runs to its edge is bigger than the view, and the tile's
+       own grid sees it well enough, so it goes on as it always did. */
+    const cellPx = (T / FILL_RES) * state.view.scale;
+    let win = null;
+    if (cellPx > 3) {
+      const side = Math.min(T, (Math.max(cw, ch) * 1.1) / state.view.scale);
+      win = {
+        ox: w.x - side / 2, oy: w.y - side / 2, span: side,
+        R: clamp(Math.round(side * state.view.scale), 64, FILL_MAX),
+      };
+    }
+
     for (;;) {
-      const places = placesFor(rings);
-      ox = -rings * T;
-      oy = -rings * T;
-      span = (1 + 2 * rings) * T;
-      R = Math.min(FILL_MAX, Math.round((FILL_RES * span) / T));
+      const places = placesFor(win ? 1 : rings);
+      if (win) {
+        ({ ox, oy, span, R } = win);
+      } else {
+        ox = -rings * T;
+        oy = -rings * T;
+        span = (1 + 2 * rings) * T;
+        R = Math.min(FILL_MAX, Math.round((FILL_RES * span) / T));
+      }
       k = R / span;
       if (fillCanvas.width !== R) fillCanvas.width = fillCanvas.height = R;
       fctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -3994,7 +4064,7 @@
          kept to the tile — grown a couple of cells past its edge, so an
          area running over the seam is seen to — and whatever it leaves
          there is cut back to the edge exactly once it is traced. */
-      dom = !rings && !t.square ? tileDomain(t, R, k, ox, oy) : null;
+      dom = !win && !rings && !t.square ? tileDomain(t, R, k, ox, oy) : null;
       if (dom) for (let i = 0, n = R * R; i < n; i++) if (!dom[i]) barrier[i] = 1;
 
       const seed = {
@@ -4020,7 +4090,10 @@
          square came back two and a half squares across and its copies
          tiled over everything around them. */
       edges = dom ? domainHit(t, raw, dom, R, k, ox, oy) : edgesHit(raw, R);
-      isGround = !rings && edges.all;
+      if (win) {
+        if (edges.any) { win = null; continue; }
+        isGround = false;
+      } else isGround = !rings && edges.all;
       if (!cropped && edges.any && !isGround) {
         if (rings < maxRings) { rings++; continue; }
         if (rings) { rings = 0; cropped = true; continue; }
@@ -5008,6 +5081,7 @@
       return;
     }
     if (k === 'h') { resetView(); return; }
+    if (k === 'z') { zoomToHeld(); return; }
     if (k === '=' || k === '+') { zoomAt(cw / 2, ch / 2, 1.2); return; }
     if (k === '-') { zoomAt(cw / 2, ch / 2, 1 / 1.2); return; }
   });
@@ -6077,8 +6151,9 @@
   });
 
   document.getElementById('width').addEventListener('input', (e) => {
-    const w = clamp(Math.round(+e.target.value), 1, 64);
-    setWidth(w);
+    setWidth(clamp(Math.round(+e.target.value), 1, 64));
+    // What is held takes the thickness as it looks at this zoom, too.
+    const w = penWidth();
     applyToHeld((sh) => (sh.layer === 'stroke' && !sh.filled && sh.width !== w
       ? Object.assign({}, sh, { width: w })
       : null));
